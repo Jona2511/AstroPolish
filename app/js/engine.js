@@ -55,10 +55,27 @@
     const B = 65536, hist = new Uint32Array(B);
     let n = 0;
     for (let i = 0; i < arr.length; i += step) { hist[Math.min(B - 1, Math.max(0, (arr[i] * (B - 1)) | 0))]++; n++; }
-    const med = histPct(hist, n, 0.5);
+    const med0 = histPct(hist, n, 0.5);
     const dh = new Uint32Array(B);
-    for (let i = 0; i < arr.length; i += step) { const d = Math.abs(arr[i] - med); dh[Math.min(B - 1, (d * (B - 1)) | 0)]++; }
-    return { med, mad: histPct(dh, n, 0.5) };
+    for (let i = 0; i < arr.length; i += step) { const d = Math.abs(arr[i] - med0); dh[Math.min(B - 1, (d * (B - 1)) | 0)]++; }
+    const mad0 = histPct(dh, n, 0.5);
+    // second, much finer pass around the coarse values: data with a pedestal and very low noise
+    // (Dwarf 3: sky 0.078, MAD 0.00004 = 2-3 coarse bins) needs sub-bin precision for the black point
+    const span = Math.max(48 / (B - 1), 12 * mad0);
+    const med = fineQuantile(arr, step, (v) => v, med0 - span, med0 + span, n * 0.5);
+    const mad = fineQuantile(arr, step, (v) => Math.abs(v - med), 0, span, n * 0.5);
+    return { med: med === null ? med0 : med, mad: mad === null ? mad0 : mad };
+  }
+  // value below which `target` samples of f(arr[i]) lie, from a fine histogram over [lo, hi];
+  // null when the answer falls outside the window
+  function fineQuantile(arr, step, f, lo, hi, target) {
+    const B = 16384, hist = new Uint32Array(B), k = B / (hi - lo);
+    let below = 0;
+    for (let i = 0; i < arr.length; i += step) { const v = f(arr[i]); if (v < lo) below++; else if (v < hi) hist[Math.min(B - 1, ((v - lo) * k) | 0)]++; }
+    let c = below;
+    if (c >= target) return null;
+    for (let i = 0; i < B; i++) { const h = hist[i]; if (c + h >= target) return lo + (i + (h ? (target - c) / h : 0.5)) / k; c += h; }
+    return null;
   }
   function percentile(arr, p, step) {
     step = step || Math.max(1, Math.floor(arr.length / 400000));
@@ -681,10 +698,25 @@
   }
 
   // star-based colour calibration + background neutralisation
+  // Sky background level per channel, measured on the darkest (object-free) tiles.
+  // The median of the whole image is biased by a large coloured object: a red emission nebula that
+  // fills a third of the frame raises the red median, so "neutralising" with it left a teal sky.
+  // Uses the darkest 30% of the tiles (after dropping implausibly dark ones such as stacking borders),
+  // so it still works when the object covers more than half of the frame.
+  function skyLevel(img) {
+    const { tiles } = backgroundTiles(img);
+    const ls = tiles.map((t) => t.l).sort((a, b) => a - b);
+    const q = (f) => ls[Math.min(ls.length - 1, Math.floor(ls.length * f))];
+    const floor = q(0.05) - 3 * Math.max(1e-6, q(0.3) - q(0.05)); // far below the dark tiles = no data
+    const dark = tiles.filter((t) => t.l > floor).sort((a, b) => a.l - b.l);
+    const use = dark.slice(0, Math.max(4, Math.round(dark.length * 0.3)));
+    const out = {};
+    for (const c of CH) { const v = use.map((t) => t[c]).sort((a, b) => a - b); out[c] = v[v.length >> 1]; }
+    return out;
+  }
   function measureColour(img) {
     const { w, h } = img;
-    const bg = {};
-    for (const c of CH) bg[c] = medMad(img[c]).med;
+    const bg = skyLevel(img);
     const L = lum(img);
     const B = gauss(L, w, h, Math.max(1.5, 3 * (img.scale || 1)));
     const hp = new Float32Array(L.length);
@@ -789,13 +821,37 @@
     return (x) => (f(x) - a) / (z - a);
   }
 
+  // Stretch LUT on a square-root grid: entry i holds fn((i/n)^2). Astro data lives in the bottom
+  // fraction of a percent of the range, where stretch curves are steepest; a uniform grid put the
+  // whole sky-to-faint-nebula range in two or three entries (seen on Dwarf 3 FITS with a pedestal).
   function buildLUT(fn, n) {
-    n = n || 4096;
+    n = n || 8192;
     const lut = new Float32Array(n + 1);
-    for (let i = 0; i <= n; i++) lut[i] = clamp01(fn(i / n));
+    for (let i = 0; i <= n; i++) { const u = i / n; lut[i] = clamp01(fn(u * u)); }
     return lut;
   }
 
+  // Highlight shoulder for the MTF stretch.
+  // A strong MTF (small m) behaves like x/(x+m): everything brighter than ~10x the background ends up
+  // in the top few percent of the output, so a bright core (M42, a galaxy bulge) becomes a flat white
+  // or grey blob. Above the knee (output level yKnee) the curve continues logarithmically instead,
+  // joined with the same value AND slope (C1 continuous, monotone), so the faint end is unchanged
+  // and the highlights keep (1 - yKnee) of the tonal range for their structure.
+  // `amount` 0..1 maps to a knee at output 0.95 (barely) .. 0.65 (strong).
+  function withShoulder(fn, m, amount) {
+    const yKnee = 0.95 - 0.3 * Math.min(1, Math.max(0, amount));
+    const xk = mtf(1 - m, yKnee); // inverse MTF: where the curve reaches yKnee
+    if (!(xk > 0 && xk < 0.999)) return fn;
+    const h = 1e-6, slope = (fn(Math.min(1, xk + h)) - fn(Math.max(0, xk - h))) / (2 * h);
+    const span = 1 - xk, top = 1 - yKnee;
+    // log segment y = yKnee + top * ln(1 + k (x - xk)) / ln(1 + k span); its slope at xk is top k / ln(1 + k span)
+    const slopeOf = (k) => (top * k) / Math.log1p(k * span);
+    if (slope <= top / span) return fn; // already less compressed than a straight line: nothing to do
+    let lo = 1e-6, hi = 1e9;
+    for (let i = 0; i < 200; i++) { const mid = Math.sqrt(lo * hi); if (slopeOf(mid) < slope) lo = mid; else hi = mid; }
+    const k = Math.sqrt(lo * hi), den = Math.log1p(k * span);
+    return (v) => (v <= xk ? fn(v) : yKnee + top * Math.log1p(k * (v - xk)) / den);
+  }
   function measureStretch(img, p) {
     const L = lum(img).map(clamp01);
     if (p.stretchMode === 'levels') {
@@ -806,8 +862,14 @@
     }
     const { med, mad } = medMad(L);
     const sigmas = -3.6 + 2.4 * p.blackPoint;
-    const c0 = Math.max(0, Math.min(med * 0.98, med + sigmas * 1.4826 * mad));
-    const c1 = Math.max(c0 + 0.01, Math.min(1, percentile(L, 0.99995) * 1.02));
+    // black point a few noise-sigmas below the sky; always (just) below the median. The old cap of
+    // med*0.98 put it ~20 sigma too low on data with a pedestal (Dwarf 3: sky 0.078, sigma 0.00008),
+    // which left faint nebulae flat and grey.
+    const sig = 1.4826 * mad, gap = sig > 0 ? 0.5 * sig : Math.max(1e-6, med * 0.02);
+    const c0 = Math.max(0, Math.min(med - gap, med + sigmas * sig));
+    // 2% headroom above the brightest pixels, measured from the black point (not from zero: on data
+    // with a pedestal, 2% of the pedestal is a large part of the real signal range)
+    const c1 = Math.max(c0 + 1e-4, Math.min(1, c0 + (percentile(L, 0.99995) - c0) * 1.02));
     const x = Math.max(1e-6, (med - c0) / (c1 - c0));
     const B = p.brightness;
     let fn;
@@ -829,6 +891,7 @@
       if (x >= B) m = 0.5; else m = (x * (B - 1)) / (2 * B * x - B - x);
       m = Math.min(0.5, Math.max(0.00005, m));
       fn = (v) => mtf(m, v);
+      if (p.shoulder > 0) fn = withShoulder(fn, m, p.shoulder);
     }
     return { c0, c1, lut: buildLUT(fn) };
   }
@@ -837,7 +900,7 @@
     const n = img.w * img.h;
     const { c0, c1, lut } = st;
     const N = lut.length - 1;
-    const g = (v) => { const f = v * N; const i = f | 0; return i >= N ? lut[N] : lut[i] + (lut[i + 1] - lut[i]) * (f - i); };
+    const g = (v) => { const f = Math.sqrt(v) * N; const i = f | 0; return i >= N ? lut[N] : lut[i] + (lut[i + 1] - lut[i]) * (f - i); };
     const sc = 1 / (c1 - c0);
     const cp = p.colorPreserve;
     const R = img.r, G = img.g, Bc = img.b;
@@ -1107,7 +1170,11 @@
   function localContrast(img, amount, bgOut, sc) {
     const { w, h } = img;
     const L = lum(img);
-    const blur = gauss(L, w, h, Math.max(3, (img.fullW || img.w) / 45));
+    // Edge-aware base (guided filter) instead of a Gaussian blur: a Gaussian base is pulled up next to
+    // a bright core, so "detail = L - base" turns strongly negative there and leaves a dark ring
+    // (halo) around M42-like cores and galaxy bulges. The guided filter keeps such strong edges in the
+    // base, while faint, low-contrast structure is still enhanced.
+    const blur = guided(L, w, h, Math.round(Math.max(3, (img.fullW || img.w) / 45)), 0.03 * 0.03);
     const mask = signalMask(L, w, h, bgOut, sc);
     const Ln = new Float32Array(L.length);
     for (let i = 0; i < L.length; i++) Ln[i] = L[i] + (L[i] - blur[i]) * amount * 1.6 * mask[i];
@@ -1188,7 +1255,8 @@
       const r = img.r[i], g = img.g[i], b = img.b[i], y = L[i];
       const C = Math.max(r, g, b) - Math.min(r, g, b);
       const tot = sat * (1 + vib * (1 - Math.min(1, C * 2.5)));
-      const f = 1 + (tot - 1) * (0.2 + 0.8 * mask[i]);
+      // the empty sky gets no extra saturation: there it would only amplify colour noise (mottle)
+      const f = bgOut < 0 ? tot : 1 + (tot - 1) * mask[i];
       let nr = y + (r - y) * f, ng = y + (g - y) * f, nb = y + (b - y) * f;
       const mx = Math.max(nr, ng, nb);
       if (mx > 1) { const k = (1 - y) / Math.max(1e-6, mx - y); nr = y + (nr - y) * k; ng = y + (ng - y) * k; nb = y + (nb - y) * k; }
@@ -1497,7 +1565,7 @@
     gradient: 0.85, gradientDegree: 2, gradientMethod: 'poly', gradientSmooth: 0.5, gradientDivide: false, vignetteFix: 0,
     neutralize: true, whiteBalance: 0.7, temperature: 0, tint: 0, wbPick: null, bgPick: null,
     deconv: 0, deconvRadius: 1.5,
-    stretchMode: 'auto', brightness: 0.22, blackPoint: 0.33, colorPreserve: 0.5, highlightProtect: 0.4,
+    stretchMode: 'auto', brightness: 0.18, blackPoint: 0.33, colorPreserve: 0.5, highlightProtect: 0.4,
     ghsB: 2, ghsLP: 0.5, ghsHP: 1,
     palette: 'rgb', oiiiBoost: 0,
     denoise: 0.5, chromaDenoise: 0.6, denoiseMethod: 'guided', bgSmooth: 0,
@@ -1513,19 +1581,19 @@
 
   const PRESETS = {
     auto: {},
-    nebula: { gradient: 0.85, whiteBalance: 0.55, brightness: 0.25, colorPreserve: 0.6, highlightProtect: 0.35, denoise: 0.55, chromaDenoise: 0.7, starReduce: 0.35, localContrast: 0.45, sharpen: 0.25, contrast: 0.15, saturation: 1.55, vibrance: 0.4, scnr: 0.25 },
-    galaxy: { gradient: 0.9, whiteBalance: 0.8, brightness: 0.2, colorPreserve: 0.55, highlightProtect: 0.7, denoise: 0.6, chromaDenoise: 0.7, starReduce: 0.15, localContrast: 0.35, sharpen: 0.35, contrast: 0.18, saturation: 1.4, vibrance: 0.3, scnr: 0.6 },
-    cluster: { gradient: 0.85, whiteBalance: 0.8, brightness: 0.17, colorPreserve: 0.75, highlightProtect: 0.6, denoise: 0.45, chromaDenoise: 0.6, starReduce: 0, localContrast: 0.1, sharpen: 0.3, contrast: 0.12, saturation: 1.45, vibrance: 0.35, scnr: 0.5 },
-    milkyway: { gradient: 0.65, gradientMethod: 'grid', whiteBalance: 0.6, brightness: 0.2, colorPreserve: 0.5, highlightProtect: 0.3, denoise: 0.5, chromaDenoise: 0.65, starReduce: 0.2, localContrast: 0.4, sharpen: 0.2, contrast: 0.15, saturation: 1.35, vibrance: 0.35, scnr: 0.4 },
-    bright: { gradient: 0.9, whiteBalance: 0.65, brightness: 0.32, blackPoint: 0.28, colorPreserve: 0.55, highlightProtect: 0.6, denoise: 0.7, chromaDenoise: 0.8, starReduce: 0.25, localContrast: 0.5, sharpen: 0.3, contrast: 0.1, saturation: 1.45, vibrance: 0.35, scnr: 0.5, bgSmooth: 0.4 },
-    natural: { gradient: 0.8, whiteBalance: 0.7, brightness: 0.16, colorPreserve: 0.4, highlightProtect: 0.3, denoise: 0.4, chromaDenoise: 0.55, starReduce: 0, localContrast: 0.15, sharpen: 0.15, contrast: 0.08, saturation: 1.15, vibrance: 0.15, scnr: 0.4 },
-    starless: { gradient: 0.85, whiteBalance: 0.6, brightness: 0.26, colorPreserve: 0.6, highlightProtect: 0.4, denoise: 0.6, chromaDenoise: 0.75, starBrightness: -1, localContrast: 0.55, sharpen: 0.3, contrast: 0.18, saturation: 1.6, vibrance: 0.4, scnr: 0.3, bgSmooth: 0.3 },
-    hoo: { gradient: 0.85, whiteBalance: 0.3, palette: 'hoo', oiiiBoost: 0.35, brightness: 0.25, colorPreserve: 0.6, highlightProtect: 0.4, denoise: 0.6, chromaDenoise: 0.75, starReduce: 0.35, localContrast: 0.45, sharpen: 0.25, contrast: 0.15, saturation: 1.5, vibrance: 0.4, scnr: 0 },
-    foraxx: { gradient: 0.85, whiteBalance: 0.3, palette: 'foraxx', oiiiBoost: 0.3, brightness: 0.25, colorPreserve: 0.6, highlightProtect: 0.4, denoise: 0.6, chromaDenoise: 0.75, starReduce: 0.35, localContrast: 0.45, sharpen: 0.25, contrast: 0.15, saturation: 1.6, vibrance: 0.45, scnr: 0 },
-    hubble: { gradient: 0.85, whiteBalance: 0.3, palette: 'sho', oiiiBoost: 0.4, brightness: 0.25, colorPreserve: 0.6, highlightProtect: 0.45, denoise: 0.6, chromaDenoise: 0.75, starReduce: 0.4, starSat: 0.4, localContrast: 0.5, sharpen: 0.25, contrast: 0.18, saturation: 1.7, vibrance: 0.45, scnr: 0, hsl: { red: [0.6, 1, 0.1], orange: [0.3, 1.2, 0.05], yellow: [0, 1.2, 0], green: [0, 0.5, 0], aqua: [0.2, 1.3, 0], blue: [0, 1.2, 0], purple: [0, 1, 0], magenta: [-0.3, 0.8, 0] } },
-    spikes: { gradient: 0.85, whiteBalance: 0.7, brightness: 0.22, colorPreserve: 0.6, highlightProtect: 0.5, denoise: 0.55, chromaDenoise: 0.7, starReduce: 0.2, localContrast: 0.35, sharpen: 0.3, contrast: 0.15, saturation: 1.45, vibrance: 0.35, scnr: 0.5, spikes: 0.35, spikeLength: 0.45 },
-    dreamy: { gradient: 0.85, whiteBalance: 0.6, brightness: 0.26, colorPreserve: 0.6, highlightProtect: 0.5, denoise: 0.75, chromaDenoise: 0.85, starReduce: 0.45, localContrast: 0.35, sharpen: 0.1, contrast: 0.1, saturation: 1.6, vibrance: 0.5, scnr: 0.3, glow: 0.45, bgSmooth: 0.5, vignette: 0.25 },
-    mono: { mono: true, whiteBalance: 0, brightness: 0.22, denoise: 0.55, starReduce: 0.2, localContrast: 0.4, sharpen: 0.3, contrast: 0.25 },
+    nebula: { gradient: 0.85, whiteBalance: 0.55, brightness: 0.195, colorPreserve: 0.6, highlightProtect: 0.35, denoise: 0.55, chromaDenoise: 0.7, starReduce: 0.35, localContrast: 0.45, sharpen: 0.25, contrast: 0.15, saturation: 1.55, vibrance: 0.4, scnr: 0.25 },
+    galaxy: { gradient: 0.9, whiteBalance: 0.8, brightness: 0.156, colorPreserve: 0.55, highlightProtect: 0.7, denoise: 0.6, chromaDenoise: 0.7, starReduce: 0.15, localContrast: 0.35, sharpen: 0.35, contrast: 0.18, saturation: 1.4, vibrance: 0.3, scnr: 0.6 },
+    cluster: { gradient: 0.85, whiteBalance: 0.8, brightness: 0.133, colorPreserve: 0.75, highlightProtect: 0.6, denoise: 0.45, chromaDenoise: 0.6, starReduce: 0, localContrast: 0.1, sharpen: 0.3, contrast: 0.12, saturation: 1.45, vibrance: 0.35, scnr: 0.5 },
+    milkyway: { gradient: 0.85, gradientMethod: 'poly', gradientDegree: 1, whiteBalance: 0.6, brightness: 0.156, colorPreserve: 0.5, highlightProtect: 0.3, denoise: 0.5, chromaDenoise: 0.65, starReduce: 0.2, localContrast: 0.4, sharpen: 0.2, contrast: 0.15, saturation: 1.35, vibrance: 0.35, scnr: 0.4 },
+    bright: { gradient: 0.9, whiteBalance: 0.65, brightness: 0.25, blackPoint: 0.28, colorPreserve: 0.55, highlightProtect: 0.6, denoise: 0.7, chromaDenoise: 0.8, starReduce: 0.25, localContrast: 0.5, sharpen: 0.3, contrast: 0.1, saturation: 1.45, vibrance: 0.35, scnr: 0.5, bgSmooth: 0.4 },
+    natural: { gradient: 0.8, whiteBalance: 0.7, brightness: 0.125, colorPreserve: 0.4, highlightProtect: 0.3, denoise: 0.4, chromaDenoise: 0.55, starReduce: 0, localContrast: 0.15, sharpen: 0.15, contrast: 0.08, saturation: 1.15, vibrance: 0.15, scnr: 0.4 },
+    starless: { gradient: 0.85, whiteBalance: 0.6, brightness: 0.203, colorPreserve: 0.6, highlightProtect: 0.4, denoise: 0.6, chromaDenoise: 0.75, starBrightness: -1, localContrast: 0.55, sharpen: 0.3, contrast: 0.18, saturation: 1.6, vibrance: 0.4, scnr: 0.3, bgSmooth: 0.3 },
+    hoo: { gradient: 0.85, whiteBalance: 0.3, palette: 'hoo', oiiiBoost: 0.35, brightness: 0.195, colorPreserve: 0.6, highlightProtect: 0.4, denoise: 0.6, chromaDenoise: 0.75, starReduce: 0.35, localContrast: 0.45, sharpen: 0.25, contrast: 0.15, saturation: 1.5, vibrance: 0.4, scnr: 0 },
+    foraxx: { gradient: 0.85, whiteBalance: 0.3, palette: 'foraxx', oiiiBoost: 0.3, brightness: 0.195, colorPreserve: 0.6, highlightProtect: 0.4, denoise: 0.6, chromaDenoise: 0.75, starReduce: 0.35, localContrast: 0.45, sharpen: 0.25, contrast: 0.15, saturation: 1.6, vibrance: 0.45, scnr: 0 },
+    hubble: { gradient: 0.85, whiteBalance: 0.3, palette: 'sho', oiiiBoost: 0.4, brightness: 0.195, colorPreserve: 0.6, highlightProtect: 0.45, denoise: 0.6, chromaDenoise: 0.75, starReduce: 0.4, starSat: 0.4, localContrast: 0.5, sharpen: 0.25, contrast: 0.18, saturation: 1.7, vibrance: 0.45, scnr: 0, hsl: { red: [0.6, 1, 0.1], orange: [0.3, 1.2, 0.05], yellow: [0, 1.2, 0], green: [0, 0.5, 0], aqua: [0.2, 1.3, 0], blue: [0, 1.2, 0], purple: [0, 1, 0], magenta: [-0.3, 0.8, 0] } },
+    spikes: { gradient: 0.85, whiteBalance: 0.7, brightness: 0.172, colorPreserve: 0.6, highlightProtect: 0.5, denoise: 0.55, chromaDenoise: 0.7, starReduce: 0.2, localContrast: 0.35, sharpen: 0.3, contrast: 0.15, saturation: 1.45, vibrance: 0.35, scnr: 0.5, spikes: 0.35, spikeLength: 0.45 },
+    dreamy: { gradient: 0.85, whiteBalance: 0.6, brightness: 0.203, colorPreserve: 0.6, highlightProtect: 0.5, denoise: 0.75, chromaDenoise: 0.85, starReduce: 0.45, localContrast: 0.35, sharpen: 0.1, contrast: 0.1, saturation: 1.6, vibrance: 0.5, scnr: 0.3, glow: 0.45, bgSmooth: 0.5, vignette: 0.25 },
+    mono: { mono: true, whiteBalance: 0, brightness: 0.172, denoise: 0.55, starReduce: 0.2, localContrast: 0.4, sharpen: 0.3, contrast: 0.25 },
     moon: { autoCrop: false, hotPixels: false, gradient: 0, stretchMode: 'levels', whiteBalance: 0.4, brightness: 0.19, blackPoint: 0.2, colorPreserve: 0, highlightProtect: 0, denoise: 0.4, chromaDenoise: 0.7, starReduce: 0, localContrast: 0.3, sharpen: 0.4, contrast: 0.12, saturation: 1.0, vibrance: 0, scnr: 0, wavelets: [0.6, 0.5, 0.3, 0.1, 0, 0] },
     moonColour: { autoCrop: false, hotPixels: false, gradient: 0, stretchMode: 'levels', whiteBalance: 0.6, brightness: 0.19, blackPoint: 0.2, colorPreserve: 0, highlightProtect: 0, denoise: 0.3, chromaDenoise: 0.9, starReduce: 0, localContrast: 0.35, sharpen: 0.4, contrast: 0.2, saturation: 3.2, vibrance: 0.6, scnr: 0, wavelets: [0.5, 0.4, 0.2, 0, 0, 0] },
     sun: { autoCrop: false, hotPixels: false, gradient: 0, stretchMode: 'levels', whiteBalance: 0, brightness: 0.22, blackPoint: 0.2, colorPreserve: 0, highlightProtect: 0, denoise: 0.25, chromaDenoise: 0.6, starReduce: 0, localContrast: 0.4, sharpen: 0.4, contrast: 0.25, saturation: 1.2, vibrance: 0.1, scnr: 0, wavelets: [0.5, 0.5, 0.3, 0, 0, 0] },
@@ -1541,7 +1609,7 @@
     [/milky|melkweg|wide|breed/i, 'milkyway'],
     [/androm|triangul|whirlpool|draaikolk|pinwheel|sombrero|bode|cigar|sigaar|leo.?trip|galax|sterrenstelsel|ngc.?891|ngc.?4565|ngc.?253/i, 'galaxy'],
     [/pleiad|zevengesternte|hercules|cluster|sterrenhoop|beehive|praesepe|double.?cluster|ngc.?869|ngc.?884|omega.?cen/i, 'cluster'],
-    [/orion|lagoon|lagune|eagle|adelaar|horsehead|paardenkop|rosette|heart|soul|hart|ziel|north.?america|noord.?amerika|pelican|pelikaan|veil|sluier|california|crab|krab|ring|dumbbell|halter|nebula|nevel|ic.?\d|sh2|sadr|cocoon|iris|bubble|bel|crescent|trifid|swan|zwaan|elephant|olifant|ngc.?7000|ngc.?2244|ngc.?6960|ngc.?6992/i, 'nebula'],
+    [/orion|lagoon|lagune|eagle|adelaar|horsehead|paardenkop|rosette|heart|soul|hart|ziel|north.?america|noord.?amerika|pelican|pelikaan|veil|sluier|california|crab|krab|ring|dumbbell|halter|nebula|nevel|\bic.?\d+|sh2|sadr|cocoon|iris|bubble|bel|crescent|trifid|swan|zwaan|elephant|olifant|ngc.?7000|ngc.?2244|ngc.?6960|ngc.?6992/i, 'nebula'],
   ];
 
   function guessFromText(text) {
@@ -1710,7 +1778,7 @@
   const internals = {
     clamp01, smooth, lum, medMad, percentile, boxBlur, gauss, minMaxFilter, opening, guided, atrous, mtf, applyLumRatio,
     curveLUT, lutGet, isIdentityCurve, removeHotPixels, fitGradient, fitGrid, applyGradient, evalModel, vignetteCorrect,
-    measureColour, measurePick, applyColour, deconvolve, measureStretch, applyStretch, buildLUT, ghsFunc, highlightProtect,
+    measureColour, skyLevel, measurePick, applyColour, deconvolve, measureStretch, applyStretch, withShoulder, buildLUT, ghsFunc, highlightProtect,
     applyPalette, denoise, waveletDenoise, noiseSigma, signalMask, backgroundSmooth, starMaskOf, separateStars, processStarLayer,
     screenCombine, starReduce, localContrast, sharpen, waveletSharpen, curves, userCurves, levels, saturate, hslAdjust,
     colourBalance, scnr, drawSpikes, glow, vignetteEffect, finalTone, clampAll, geomOf, sampleBilinear,

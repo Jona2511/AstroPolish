@@ -6,7 +6,7 @@
 Drop in a photo and you immediately get a complete automatic edit, built from layers you can still adjust, hide, mask and blend.
 
 **Two modes** (switch at the top right):
-- **Simple** (default for new users): three steps. Open a photo, choose a style, optionally move a few plain-language sliders (brightness, contrast, colour, cool/warm, light pollution, noise, smaller stars, sharpness) and save. No layers or tools in sight.
+- **Simple** (default for new users): a guided workflow in six short steps — what is in the photo (detected automatically, easy to change), automatic edit (choose a style), brightness and stretch, colour and sky, noise and stars, compare and save. Every slider has a one-line explanation and shows a tip or warning when a value is likely to hurt the photo. Steps are optional: open any step directly, or tick *Show all steps at once*. See [docs/simple-mode.md](docs/simple-mode.md).
 - **Expert**: the full Photoshop-style workspace described below. Every layer comes with a short explanation of what it does.
 
 ![AstroPolish](docs/screenshot.png)
@@ -51,7 +51,7 @@ Drop in a photo and you immediately get a complete automatic edit, built from la
 - Info panel with stacking borders, light pollution, green cast, noise level, star count and sharpness (FWHM), plus the full FITS header.
 
 **Light.**
-- Stretching with seven methods: Automatic (STF), statistical, arcsinh, GHS (Generalized Hyperbolic Stretch), logarithmic, levels and manual.
+- Stretching with seven methods: Automatic (STF), statistical, arcsinh, GHS (Generalized Hyperbolic Stretch), logarithmic, levels and manual. The automatic stretch has a *Protect highlights* control that keeps structure in bright cores (e.g. M42). How it works: [docs/stretch.md](docs/stretch.md).
 - HDR multiscale transform.
 - Brightness, black point, colour preservation and HDR protection of bright cores.
 - Contrast, levels (black/gamma/white) and a per-channel **curves editor**.
@@ -147,6 +147,8 @@ Maximum image size: 250 megapixels. A 24 Mpx export with the automatic edit uses
 - Error messages from the file readers are in Dutch only.
 - The Windows and Mac apps are not code-signed and the Mac app is not notarised by Apple (warning on first launch).
 - There is no full colour management pipeline (no ICC profiles in exports, everything is sRGB).
+- The automatic presets are tuned and tested on synthetic scenes with known ground truth (see [CHANGELOG.md](CHANGELOG.md)); they have not yet been validated on a broad set of real stacked images.
+- Light-pollution removal cannot always tell a very faint nebula that fills the whole frame apart from a sky gradient; lower *Remove light pollution* if faint outer nebulosity disappears.
 
 ## Performance
 
@@ -221,7 +223,7 @@ MIT, see [LICENSE](LICENSE). The app itself has no runtime dependencies. Buildin
 Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebouwd uit lagen die je allemaal nog kunt aanpassen, verbergen, maskeren en mengen.
 
 **Twee modi** (rechtsboven te wisselen):
-- **Eenvoudig** (standaard voor nieuwe gebruikers): drie stappen. Foto openen, stijl kiezen, eventueel een paar schuifjes in gewone taal (helderheid, contrast, kleur, koel/warm, lichtvervuiling, ruis, sterren kleiner, scherpte) en opslaan. Geen lagen of gereedschappen in beeld.
+- **Eenvoudig** (standaard voor nieuwe gebruikers): een begeleide werkwijze in zes korte stappen — wat staat er op de foto (automatisch herkend, makkelijk aan te passen), automatische bewerking (stijl kiezen), helderheid en stretch, kleur en lucht, ruis en sterren, vergelijken en opslaan. Elk schuifje heeft een uitleg van één regel en geeft een tip of waarschuwing als een waarde de foto waarschijnlijk slechter maakt. De stappen zijn niet verplicht: open elke stap direct, of vink *Alle stappen tegelijk tonen* aan. Zie [docs/simple-mode.md](docs/simple-mode.md).
 - **Expert**: de volledige Photoshop-werkruimte hieronder. Elke laag heeft een korte uitleg wat hij doet.
 
 ![AstroPolish](docs/screenshot.png)
@@ -266,7 +268,7 @@ Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebo
 - Info-paneel met stackranden, lichtvervuiling, groene zweem, ruisniveau, aantal sterren en scherpte (FWHM), plus de volledige FITS-header.
 
 **Licht.**
-- Oprekken met zeven methoden: Automatisch (STF), statistisch, Arcsinh, GHS (Generalized Hyperbolic Stretch), logaritmisch, niveaus en handmatig.
+- Oprekken met zeven methoden: Automatisch (STF), statistisch, Arcsinh, GHS (Generalized Hyperbolic Stretch), logaritmisch, niveaus en handmatig. De automatische stretch heeft een schuif *Hoge lichten sparen* die structuur in heldere kernen (zoals M42) bewaart. Uitleg: [docs/stretch.md](docs/stretch.md).
 - HDR-multischaaltransformatie.
 - Helderheid, zwartpunt, kleurbehoud en HDR-bescherming van felle kernen.
 - Contrast, niveaus (zwart/gamma/wit) en een **curves-editor** per kanaal.
@@ -362,6 +364,8 @@ Maximale afbeeldingsgrootte: 250 megapixel. Een 24 Mpx-export met de automatisch
 - Foutmeldingen van de bestandslezers zijn alleen in het Nederlands.
 - De Windows- en Mac-app zijn niet digitaal ondertekend en de Mac-app is niet door Apple genotariseerd (waarschuwing bij de eerste keer openen).
 - Er is geen echte kleurbeheer-pipeline (geen ICC-profielen in exports, alles is sRGB).
+- De automatische presets zijn afgesteld en getest op synthetische scènes met bekende waarheid (zie [CHANGELOG.md](CHANGELOG.md)); ze zijn nog niet gevalideerd op een brede set echte gestackte opnames.
+- Lichtvervuiling weghalen kan een heel zwakke nevel die het hele beeld vult niet altijd onderscheiden van een gradient in de lucht; zet *Lichtvervuiling weghalen* lager als zwakke buitenste nevel verdwijnt.
 
 ## Prestaties
 

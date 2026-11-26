@@ -25,11 +25,27 @@ with sync_playwright() as p:
     page.wait_for_function('() => AstroApp.D() && AstroApp.D().layers.length > 3', timeout=60000)
     wait_idle(page)
     page.screenshot(path=f'{OUT}/s1-simple.png')
+    # guided steps: step 2 (automatic edit) is open after opening a photo
+    assert page.evaluate("document.querySelector('.gstep.open').dataset.step") == '2'
     page.click('.stile[data-action="bright"]'); wait_idle(page)
+    page.click('.gstep.open .nextstep'); wait_idle(page)
+    assert page.evaluate("document.querySelector('.gstep.open').dataset.step") == '3'
+    page.screenshot(path=f'{OUT}/s1b-step3.png')
+    # warning appears for an extreme value
+    page.eval_on_selector('.srow[data-k="bright"] input', "(i) => { i.value = '0.42'; i.dispatchEvent(new Event('input')); }"); wait_idle(page)
+    assert page.evaluate("document.querySelector('.srow[data-k=\"bright\"] .adv').classList.contains('warn')")
+    # step 1: choose object type manually
+    page.click('.gstep[data-step="1"] .gstephead'); page.click('.stile[data-object="galaxy"]'); wait_idle(page)
+    assert page.evaluate('AstroApp.D().action') == 'galaxy'
+    # show every step at once (no forced wizard)
+    page.click('.guidehead input'); wait_idle(page)
+    assert page.evaluate("document.querySelectorAll('.gstep.open').length") == 6
     for k, v in [('bright', '0.3'), ('noise', '0.6'), ('stars', '0.5'), ('lp', '1'), ('warm', '0.3'), ('sharp', '0.5'), ('color', '1.8'), ('contrast', '0.3')]:
         page.eval_on_selector(f'.srow[data-k="{k}"] input', f"(i) => {{ i.value = '{v}'; i.dispatchEvent(new Event('input')); }}")
         wait_idle(page)
-    page.screenshot(path=f'{OUT}/s2-sliders.png')
+    page.screenshot(path=f'{OUT}/s2-sliders.png', full_page=True)
+    assert page.evaluate("AstroApp.D().layers.find(l=>l.op==='stretch').params.shoulder") is not None
+    page.click('.guidehead input')
     print('simple layers:', page.evaluate('AstroApp.D().layers.map(l=>l.op).join(",")'))
     page.keyboard.press('Control+z'); wait_idle(page)
     page.click('.modeswitch button[data-mode="expert"]'); wait_idle(page)

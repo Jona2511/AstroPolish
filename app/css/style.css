@@ -249,3 +249,22 @@ body.simple .dock { overflow-y: auto; }
 .stickysave { position: sticky; bottom: 0; background: var(--bg1); padding: 4px 0 6px; margin: 0 -2px; z-index: 2; }
 .stickysave .btn.big { box-shadow: 0 -6px 12px var(--bg1); }
 .errdetails { max-height: 220px; overflow: auto; background: var(--bg1); border: 1px solid var(--line2); padding: 8px; font: 11px/1.4 Consolas, monospace; white-space: pre-wrap; user-select: text; }
+
+/* guided simple mode */
+.guidehead { display: flex; justify-content: flex-end; margin: 0 0 6px; color: var(--dim); font-size: 11.5px; }
+.gstep { border: 1px solid var(--line2); border-radius: 6px; margin: 0 0 6px; background: var(--bg2); }
+.gstep.open { border-color: #4d6f99; }
+.gstephead { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; background: none; border: 0; color: var(--hi); font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+.gstephead b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--bg4); color: #fff; font-size: 12px; flex: none; }
+.gstep.open .gstephead b { background: var(--accent); }
+.gstep.done .gstephead b { background: #2f7a46; }
+.gstephead span:nth-child(2) { flex: 1; }
+.gstephead .chev { color: var(--dim); }
+.gstepbody { padding: 0 10px 10px; }
+.gstepbody .nextstep { margin-top: 6px; float: right; }
+.gstepbody::after { content: ''; display: block; clear: both; }
+.srow .adv { font-size: 11px; line-height: 1.35; margin-top: 3px; }
+.srow .adv:empty { display: none; }
+.srow .adv.warn { color: var(--warn); }
+.srow .adv.tip { color: #7fb6ff; }
+.pnote.small { font-size: 10.5px; }

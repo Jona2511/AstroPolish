@@ -267,6 +267,7 @@
       g: 'stretch', nl: 'Oprekken (stretch)', en: 'Stretch',
       p: [S('method', 'auto', OPTS_STRETCH, 'Methode', 'Method'), R('brightness', 0.22, 0.04, 0.45, 0.005, 'Helderheid', 'Brightness', { show: (p) => p.method !== 'manual' }),
         R('blackPoint', 0.33, 0, 1, 0.01, 'Zwartpunt', 'Black point', { show: (p) => p.method !== 'manual' }), R('colorPreserve', 0.5, 0, 1, 0.01, 'Kleurbehoud', 'Colour preservation'),
+        R('shoulder', 0.5, 0, 1, 0.01, 'Hoge lichten sparen', 'Protect highlights', { show: (p) => p.method === 'auto' }),
         R('ghsB', 2, -3, 12, 0.1, 'GHS lokale intensiteit (b)', 'GHS local intensity (b)', { show: (p) => p.method === 'ghs' }), R('ghsLP', 0.5, 0, 1, 0.01, 'GHS schaduwen beschermen', 'GHS protect shadows', { show: (p) => p.method === 'ghs' }),
         R('ghsHP', 1, 0.5, 1, 0.01, 'GHS hoge lichten beschermen', 'GHS protect highlights', { show: (p) => p.method === 'ghs' }),
         R('black', 0.0, 0, 0.5, 0.001, 'Zwart', 'Black', { show: (p) => p.method === 'manual' }), R('mid', 0.25, 0.001, 0.999, 0.001, 'Midden', 'Midtones', { show: (p) => p.method === 'manual' }),
@@ -302,7 +303,7 @@
           }
           I.applyStretch(img, ctx.lg, p); return img;
         }
-        if (!ctx.st2) ctx.st2 = I.measureStretch(img, { stretchMode: p.method, brightness: p.brightness, blackPoint: p.blackPoint, ghsB: p.ghsB, ghsLP: p.ghsLP, ghsHP: p.ghsHP });
+        if (!ctx.st2) ctx.st2 = I.measureStretch(img, { stretchMode: p.method, brightness: p.brightness, blackPoint: p.blackPoint, ghsB: p.ghsB, ghsLP: p.ghsLP, ghsHP: p.ghsHP, shoulder: p.shoulder });
         I.applyStretch(img, ctx.st2, p); return img;
       },
     },
@@ -569,7 +570,7 @@
     let type = name;
     if (name === 'auto') type = (detected && detected.type) || 'nebula';
     const P = Object.assign({}, E.DEFAULTS, E.PRESETS[type] || E.PRESETS.nebula);
-    if (name === 'auto' && detected && detected.fallback) { P.starReduce = 0.2; P.saturation = 1.4; P.brightness = 0.23; }
+    if (name === 'auto' && detected && detected.fallback) { P.starReduce = 0.2; P.saturation = 1.4; P.brightness = 0.18; }
     const L = [];
     const add = (op, params, extra) => L.push(newLayer(op, params, extra));
     if (P.hotPixels) add('hotpix');
@@ -577,8 +578,12 @@
     if (P.gradient > 0) add('gradient', { amount: P.gradient, method: P.gradientMethod, degree: P.gradientDegree, smooth: P.gradientSmooth, divide: P.gradientDivide });
     add('colorcal', { neutralize: P.neutralize, whiteBalance: P.whiteBalance, temperature: P.temperature, tint: P.tint });
     if (P.deconv > 0) add('deconv', { strength: P.deconv, radius: P.deconvRadius });
-    add('stretch', { method: P.stretchMode, brightness: P.brightness, blackPoint: P.blackPoint, colorPreserve: P.colorPreserve, ghsB: P.ghsB, ghsLP: P.ghsLP, ghsHP: P.ghsHP });
-    if (P.highlightProtect > 0 && P.stretchMode !== 'levels') add('hdr', { amount: P.highlightProtect });
+    // With the automatic (MTF) stretch the highlights are protected inside the curve itself (shoulder),
+    // which keeps the structure of bright cores. The old separate 'hdr' layer only dimmed them evenly,
+    // which made M42-like cores a flat grey disc; it is still added for the other stretch methods.
+    const auto = P.stretchMode === 'auto';
+    add('stretch', Object.assign({ method: P.stretchMode, brightness: P.brightness, blackPoint: P.blackPoint, colorPreserve: P.colorPreserve, ghsB: P.ghsB, ghsLP: P.ghsLP, ghsHP: P.ghsHP }, auto ? { shoulder: Math.min(1, 0.3 + P.highlightProtect) } : { shoulder: 0 }));
+    if (P.highlightProtect > 0 && P.stretchMode !== 'levels' && !auto) add('hdr', { amount: P.highlightProtect });
     if (P.palette && P.palette !== 'rgb') add('palette', { palette: P.palette, oiiiBoost: P.oiiiBoost });
     if (P.denoise > 0 || P.chromaDenoise > 0) add('denoise', { method: P.denoiseMethod, luma: P.denoise, chroma: P.chromaDenoise });
     if (P.bgSmooth > 0) add('bgsmooth', { amount: P.bgSmooth });

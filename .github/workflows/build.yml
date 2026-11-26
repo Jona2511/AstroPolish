@@ -32,6 +32,8 @@ jobs:
         run: node test/ops-test.js
       - name: Stacking
         run: node test/stack-test.js
+      - name: Preset quality tests (synthetic scenes)
+        run: node test/presets-test.js
       - name: Legacy engine presets
         run: node test/engine-test.js /tmp/astropolish-test
         env:
@@ -98,6 +100,9 @@ jobs:
         run: npx electron-builder --mac --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # ad-hoc signing only (no certificate or secrets); without this electron-builder skips
+          # signing for pull-request builds and the signature check below fails
+          CSC_FOR_PULL_REQUEST: 'true'
       - name: Verify signature and architectures (arm64 + x86_64)
         run: |
           APP=$(find dist -maxdepth 3 -name "AstroPolish.app" | head -1)
@@ -145,6 +150,17 @@ jobs:
           else
             echo "released=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Compose release notes
+        if: steps.exists.outputs.released == 'false'
+        shell: bash
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # English first (what changed + download), then Dutch; RELEASE_NOTES.md has both,
+          # separated by the line <!-- nl -->
+          { sed '/<!-- nl -->/,$d' RELEASE_NOTES.md; cat .github/release-download.en.md
+            echo; sed -n '/<!-- nl -->/,$p' RELEASE_NOTES.md | sed '1d'; cat .github/release-download.nl.md
+          } | sed "s/__VERSION__/${VERSION}/g" > release-body.md
       - name: Publish release
         if: steps.exists.outputs.released == 'false'
         uses: softprops/action-gh-release@v2
@@ -156,12 +172,4 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.zip
-          body: |
-            **Download voor Windows**
-            - `AstroPolish-${{ steps.v.outputs.version }}-portable.exe`: direct starten, niets installeren
-            - `AstroPolish-${{ steps.v.outputs.version }}-setup.exe`: installeren met snelkoppeling op het bureaublad
-
-            **Download voor macOS** (Apple Silicon en Intel, macOS 12 of nieuwer)
-            - `AstroPolish-${{ steps.v.outputs.version }}-mac.dmg`: openen en AstroPolish naar Programma's slepen
-
-            De app is niet digitaal ondertekend. Windows SmartScreen: kies *Meer informatie* → *Toch uitvoeren*. macOS: open de app één keer, ga naar *Systeeminstellingen → Privacy en beveiliging* en kies *Open toch*.
+          body_path: release-body.md
