@@ -103,6 +103,13 @@ jobs:
           APP=$(find dist -maxdepth 3 -name "AstroPolish.app" | head -1)
           codesign --verify --deep --strict --verbose=2 "$APP"
           lipo -archs "$APP/Contents/MacOS/AstroPolish"
+      - name: Smoke test (the app starts and keeps running for 20 seconds)
+        run: |
+          APP=$(find dist -maxdepth 3 -name "AstroPolish.app" | head -1)
+          "$APP/Contents/MacOS/AstroPolish" > /tmp/astropolish.log 2>&1 &
+          PID=$!
+          sleep 20
+          if kill -0 $PID; then echo "AstroPolish is running"; kill $PID; else echo "AstroPolish exited early"; cat /tmp/astropolish.log; exit 1; fi
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:

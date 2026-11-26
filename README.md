@@ -16,8 +16,9 @@ Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebo
 | | |
 |---|---|
 | 🪟 **Windows-app** | Ga naar [Releases](../../releases/latest) en download `AstroPolish-…-portable.exe` (direct starten, niets installeren) of `AstroPolish-…-setup.exe` (installatieprogramma met snelkoppeling). |
+| 🍎 **Mac** | Ga naar [Releases](../../releases/latest) en download `AstroPolish-…-mac.dmg` (Apple Silicon en Intel, macOS 12 of nieuwer). Open het bestand en sleep AstroPolish naar *Programma's*. |
 
-> Windows SmartScreen kan bij de eerste keer waarschuwen omdat de app (nog) niet digitaal ondertekend is. Kies dan *Meer informatie* → *Toch uitvoeren*.
+> De app is (nog) niet digitaal ondertekend. **Windows:** SmartScreen kan waarschuwen; kies *Meer informatie* → *Toch uitvoeren*. **Mac:** macOS blokkeert de eerste keer openen; ga naar *Systeeminstellingen → Privacy en beveiliging* en kies *Open toch*. Zegt macOS dat de app "beschadigd" is, voer dan in Terminal `xattr -cr /Applications/AstroPolish.app` uit.
 
 ## Alles wat erin zit
 
@@ -142,7 +143,7 @@ Maximale afbeeldingsgrootte: 250 megapixel. Een 24 Mpx-export met de automatisch
 - CLAHE berekent zijn tegels per beeld: bij 100%-zoom (uitsnede) kan het lokaal iets anders ogen dan in de export.
 - Mono-opnames gebruiken intern drie kanalen (3× geheugen).
 - Foutmeldingen van de bestandslezers zijn alleen in het Nederlands.
-- De Windows-app is niet digitaal ondertekend (SmartScreen-waarschuwing).
+- De Windows- en Mac-app zijn niet digitaal ondertekend en de Mac-app is niet door Apple genotariseerd (waarschuwing bij de eerste keer openen).
 - Er is geen echte kleurbeheer-pipeline (geen ICC-profielen in exports, alles is sRGB).
 
 ## Prestaties
