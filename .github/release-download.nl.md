@@ -1,3 +1,6 @@
+
+### Downloaden
+
 **Download voor Windows**
 - `AstroPolish-__VERSION__-portable.exe`: direct starten, niets installeren
 - `AstroPolish-__VERSION__-setup.exe`: installeren met snelkoppeling op het bureaublad

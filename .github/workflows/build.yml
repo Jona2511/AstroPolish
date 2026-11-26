@@ -100,6 +100,9 @@ jobs:
         run: npx electron-builder --mac --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # ad-hoc signing only (no certificate or secrets); without this electron-builder skips
+          # signing for pull-request builds and the signature check below fails
+          CSC_FOR_PULL_REQUEST: 'true'
       - name: Verify signature and architectures (arm64 + x86_64)
         run: |
           APP=$(find dist -maxdepth 3 -name "AstroPolish.app" | head -1)
@@ -153,8 +156,11 @@ jobs:
         env:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
-          # what changed in this version (RELEASE_NOTES.md), then the download instructions
-          cat RELEASE_NOTES.md .github/release-download.md | sed "s/__VERSION__/${VERSION}/g" > release-body.md
+          # English first (what changed + download), then Dutch; RELEASE_NOTES.md has both,
+          # separated by the line <!-- nl -->
+          { sed '/<!-- nl -->/,$d' RELEASE_NOTES.md; cat .github/release-download.en.md
+            echo; sed -n '/<!-- nl -->/,$p' RELEASE_NOTES.md | sed '1d'; cat .github/release-download.nl.md
+          } | sed "s/__VERSION__/${VERSION}/g" > release-body.md
       - name: Publish release
         if: steps.exists.outputs.released == 'false'
         uses: softprops/action-gh-release@v2
