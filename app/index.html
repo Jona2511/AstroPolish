@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AstroPolish</title>
+<meta name="description" content="Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi. Werkt volledig lokaal.">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="lg" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#ffd27a"/><stop offset=".45" stop-color="#ff7a59"/><stop offset="1" stop-color="#6a4cff"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#lg)"/><path d="M32 12l3.2 12.8L48 28l-12.8 3.2L32 44l-3.2-12.8L16 28l12.8-3.2z" fill="#fff" opacity=".95"/><circle cx="47" cy="46" r="2.4" fill="#fff"/><circle cx="18" cy="45" r="1.6" fill="#fff" opacity=".8"/></svg>
+    <div>
+      <div class="brand-name">AstroPolish</div>
+      <div class="brand-sub" data-i18n="tagline">Astrofoto's mooi maken met één klik</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button class="ghost hidden" id="btnNew" data-i18n="newPhoto">Nieuwe foto</button>
+    <button class="ghost hidden" id="btnBatch" data-i18n="batch">Meerdere foto's</button>
+    <div class="lang" role="group" aria-label="Language">
+      <button data-lang="nl">NL</button><button data-lang="en">EN</button>
+    </div>
+    <button class="icon-btn" id="btnHelp" aria-label="Help" title="Help">?</button>
+  </div>
+</header>
+
+<!-- ============================== welcome ============================== -->
+<main id="welcome" class="welcome">
+  <div class="sky" aria-hidden="true"></div>
+  <label class="drop" id="drop" for="fileInput">
+    <svg class="drop-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 31V9m0 0l-8 8m8-8l8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 30v6a4 4 0 004 4h24a4 4 0 004-4v-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+    <h1 data-i18n="dropTitle">Sleep je astrofoto hierheen</h1>
+    <p data-i18n="dropOr">of</p>
+    <span class="btn primary big" data-i18n="choose">Kies een foto</span>
+    <p class="formats" data-i18n="formats">JPG, PNG, TIFF en FITS · ook gestackte FITS van de Dwarf 3</p>
+  </label>
+  <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.fit,.fits,.fts,image/*" hidden>
+  <button class="link" id="btnDemo" data-i18n="demo">Of probeer het eerst met een voorbeeldfoto</button>
+  <ol class="steps">
+    <li><b>1</b><span data-i18n="step1">Foto kiezen</span></li>
+    <li><b>2</b><span data-i18n="step2">Stijl aanklikken</span></li>
+    <li><b>3</b><span data-i18n="step3">Opslaan</span></li>
+  </ol>
+  <p class="privacy" data-i18n="privacy">Je foto's blijven op je eigen computer. Er wordt niets geüpload.</p>
+</main>
+
+<!-- ============================== editor ============================== -->
+<main id="editor" class="editor hidden">
+  <section class="viewer">
+    <div class="stage" id="stage">
+      <canvas id="view"></canvas>
+      <div class="tag tag-before" id="tagBefore" data-i18n="before">Voor</div>
+      <div class="tag tag-after" id="tagAfter" data-i18n="after">Na</div>
+      <div class="busy hidden" id="busy"><span class="spinner"></span><span data-i18n="working">Bezig…</span></div>
+      <div class="hint" id="hint" data-i18n="hint">Sleep de lijn om voor en na te vergelijken · houd spatie ingedrukt voor het origineel</div>
+    </div>
+    <div class="toolbar">
+      <div class="seg" role="group">
+        <button data-view="after" data-i18n="after">Na</button>
+        <button data-view="split" class="on" data-i18n="compare">Voor / na</button>
+        <button data-view="before" data-i18n="before">Voor</button>
+      </div>
+      <div class="seg" role="group">
+        <button data-zoom="fit" class="on" data-i18n="fit">Passend</button>
+        <button data-zoom="1" data-i18n="zoom100">100%</button>
+      </div>
+      <div class="seg" role="group">
+        <button id="btnRot" title="Draai 90°" data-i18n-title="rotate">⟳</button>
+        <button id="btnFlipH" title="Spiegel horizontaal" data-i18n-title="flipH">⇋</button>
+        <button id="btnFlipV" title="Spiegel verticaal" data-i18n-title="flipV">⇵</button>
+      </div>
+      <div class="fileinfo" id="fileInfo"></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="card">
+      <h2><span class="num">1</span><span data-i18n="chooseStyle">Kies een stijl</span></h2>
+      <div class="presets" id="presets"></div>
+      <p class="detected" id="detected"></p>
+    </div>
+
+    <div class="card">
+      <h2><span class="num">2</span><span data-i18n="quick">Snel bijstellen</span> <span class="opt" data-i18n="optional">(optioneel)</span></h2>
+      <div id="quick"></div>
+      <details id="advanced">
+        <summary data-i18n="allSettings">Alle instellingen</summary>
+        <div id="advancedBody"></div>
+        <canvas id="hist" width="300" height="70" aria-label="Histogram"></canvas>
+      </details>
+      <button class="ghost small" id="btnReset" data-i18n="reset">Terug naar stijl</button>
+    </div>
+
+    <div class="card save">
+      <h2><span class="num">3</span><span data-i18n="save">Opslaan</span></h2>
+      <select id="format">
+        <option value="jpg" data-i18n="fmtJpg">JPG – deelbaar, kleine bestanden</option>
+        <option value="png" data-i18n="fmtPng">PNG – zonder kwaliteitsverlies</option>
+        <option value="tif" data-i18n="fmtTif">TIFF 16-bit – voor verder bewerken</option>
+      </select>
+      <button class="btn primary big wide" id="btnSave" data-i18n="saveBtn">Foto opslaan</button>
+    </div>
+  </aside>
+</main>
+
+<!-- ============================== batch ============================== -->
+<dialog id="batchDlg" class="dlg">
+  <h2 data-i18n="batchTitle">Meerdere foto's tegelijk</h2>
+  <p data-i18n="batchText">Alle foto's krijgen de stijl en instellingen die je nu gebruikt. Met de stijl "Automatisch" kiest de app per foto zelf de beste stijl.</p>
+  <label class="btn ghost" for="batchInput" data-i18n="batchPick">Foto's kiezen</label>
+  <input type="file" id="batchInput" multiple accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.fit,.fits,.fts,image/*" hidden>
+  <ul id="batchList" class="batchlist"></ul>
+  <div class="dlg-actions">
+    <button class="ghost" id="batchClose" data-i18n="close">Sluiten</button>
+    <button class="btn primary" id="batchStart" disabled data-i18n="batchStart">Start</button>
+  </div>
+</dialog>
+
+<!-- ============================== help ============================== -->
+<dialog id="helpDlg" class="dlg">
+  <div id="helpBody"></div>
+  <div class="dlg-actions"><button class="btn primary" id="helpClose" data-i18n="close">Sluiten</button></div>
+</dialog>
+
+<div class="overlay hidden" id="overlay"><div class="overlay-box"><span class="spinner big"></span><p id="overlayText"></p></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="js/engine.js"></script>
+<script src="js/formats.js"></script>
+<script src="js/core.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
