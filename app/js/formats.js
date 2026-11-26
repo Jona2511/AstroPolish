@@ -308,7 +308,35 @@
     return buf;
   }
 
-  const api = { readFITS, readTIFF, writeTIFF16, makeImage, debayer, flipV };
+  // 32-bit float RGB FITS writer (values 0..1), rows bottom-up as the standard says
+  function writeFITS(r, g, b, w, h, extra) {
+    const cards = [];
+    const card = (k, v, c) => {
+      let s;
+      if (typeof v === 'string') s = `${k.padEnd(8)}= '${v.replace(/'/g, "''").slice(0, 60)}'`;
+      else if (typeof v === 'boolean') s = `${k.padEnd(8)}= ${(v ? 'T' : 'F').padStart(20)}`;
+      else s = `${k.padEnd(8)}= ${String(v).padStart(20)}`;
+      if (c) s += ' / ' + c;
+      cards.push(s.slice(0, 80).padEnd(80));
+    };
+    card('SIMPLE', true); card('BITPIX', -32); card('NAXIS', 3); card('NAXIS1', w); card('NAXIS2', h); card('NAXIS3', 3);
+    card('BZERO', 0); card('BSCALE', 1); card('ROWORDER', 'BOTTOM-UP');
+    for (const k in (extra || {})) if (/^[A-Z0-9_-]{1,8}$/.test(k) && extra[k] !== undefined && extra[k] !== '') card(k, extra[k]);
+    cards.push('END'.padEnd(80));
+    let head = cards.join('');
+    head += ' '.repeat((2880 - head.length % 2880) % 2880);
+    const dataLen = w * h * 3 * 4;
+    const total = head.length + dataLen + ((2880 - dataLen % 2880) % 2880);
+    const buf = new ArrayBuffer(total);
+    const u8 = new Uint8Array(buf);
+    for (let i = 0; i < head.length; i++) u8[i] = head.charCodeAt(i) & 0x7f;
+    const dv = new DataView(buf, head.length);
+    let o = 0;
+    for (const ch of [r, g, b]) for (let y = h - 1; y >= 0; y--) for (let x = 0; x < w; x++) { dv.setFloat32(o, ch[y * w + x], false); o += 4; }
+    return buf;
+  }
+
+  const api = { readFITS, readTIFF, writeTIFF16, writeFITS, makeImage, debayer, flipV };
   root.AstroFormats = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);
