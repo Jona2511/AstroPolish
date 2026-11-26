@@ -34,17 +34,26 @@
   // make sure the measurements (ctx) exist for these layers: run them once on the preview
   function warm(state, layers) { O.processStack(state.prev, layers, state.store, { cache: true }); }
 
+  // decode FITS/TIFF (async because deflate-compressed TIFF uses DecompressionStream)
+  async function decode(msg) {
+    const F = root.AstroFormats || (typeof require !== 'undefined' ? require('./formats.js') : null);
+    const img = ['tif', 'tiff'].includes(msg.ext) ? await F.readTIFF(msg.buffer) : F.readFITS(msg.buffer);
+    return { result: { cmd: 'decode', img }, transfer: [img.r.buffer, img.g.buffer, img.b.buffer] };
+  }
+
   function handle(state, msg) {
     switch (msg.cmd) {
       case 'source': {
         const src = msg.img;
         Object.assign(src, { scale: 1, x0: 0, y0: 0, fullW: src.w, fullH: src.h });
+        // defensive: whatever the decoder produced, NaN/Inf must never enter the pipeline
+        const replaced = E.sanitize(src);
         state.src = src;
         state.prev = E.downscale(src, msg.previewSize || 1200);
         state.store = { srcKey: ++srcCounter, ctx: new Map(), cache: new Map() };
         const before = E.toRGBA(state.prev);
         const det = E.autoPreset(state.prev, msg.fileName || '');
-        return { result: { cmd: 'source', w: src.w, h: src.h, pw: state.prev.w, ph: state.prev.h, before, detected: det }, transfer: [before.buffer] };
+        return { result: { cmd: 'source', w: src.w, h: src.h, pw: state.prev.w, ph: state.prev.h, before, detected: det, replaced }, transfer: [before.buffer] };
       }
       case 'analyze': return { result: { cmd: 'analyze', analysis: E.analyze(state.prev, state.prev.scale) } };
       case 'preview': {
@@ -127,7 +136,7 @@
     }
   }
 
-  const api = { handle };
+  const api = { decode, handle };
   root.AstroCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);

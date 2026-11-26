@@ -248,3 +248,4 @@ body.simple .dock { overflow-y: auto; }
 @media (max-width: 1000px) { body.simple .workspace { grid-template-columns: 1fr 300px; } }
 .stickysave { position: sticky; bottom: 0; background: var(--bg1); padding: 4px 0 6px; margin: 0 -2px; z-index: 2; }
 .stickysave .btn.big { box-shadow: 0 -6px 12px var(--bg1); }
+.errdetails { max-height: 220px; overflow: auto; background: var(--bg1); border: 1px solid var(--line2); padding: 8px; font: 11px/1.4 Consolas, monospace; white-space: pre-wrap; user-select: text; }

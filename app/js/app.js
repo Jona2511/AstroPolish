@@ -1,6 +1,7 @@
 /* AstroPolish v3 - Photoshop-style interface with adjustment layers */
 (function () {
   'use strict';
+  window.APP_VERSION = '3.1.0'; // keep in sync with package.json (checked by test/release-test.js)
   const E = window.AstroEngine, O = window.AstroOps, F = window.AstroFormats, I18N = window.I18N;
   const $ = (id) => document.getElementById(id);
   const L = (nl, en) => (I18N.getLang() === 'en' ? en : nl);
@@ -11,7 +12,7 @@
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
   const esc = (s) => String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const baseName = (n) => (n || 'astrofoto').replace(/\.[^.]+$/, '');
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const clamp = (v, a, b) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v)) : a); // NaN-safe
   const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   const deep = (o) => JSON.parse(JSON.stringify(o));
   function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), ms || 3000); }
@@ -20,21 +21,74 @@
   // ------------------------------------------------------------ processor ---
   const proc = (() => {
     let worker = null;
-    try { if (location.protocol !== 'file:') worker = new Worker('js/worker.js'); } catch (e) { worker = null; }
     const pending = new Map(); let seq = 0; const local = {};
-    if (worker) {
-      worker.onmessage = (e) => { const m = e.data, p = pending.get(m.id); if (!p) return; pending.delete(m.id); if (m.cmd === 'error') p.reject(new Error(m.message)); else p.resolve(m); };
-      worker.onerror = (e) => { for (const p of pending.values()) p.reject(new Error(e.message || 'worker error')); pending.clear(); };
+    const api = { isWorker: false, lost: false };
+    function start() {
+      try { if (location.protocol !== 'file:') worker = new Worker('js/worker.js'); } catch (e) { worker = null; }
+      if (!worker) return;
+      api.isWorker = true;
+      worker.onmessage = (e) => {
+        const m = e.data, p = pending.get(m.id); if (!p) return; pending.delete(m.id);
+        if (m.cmd === 'error') { const err = new Error(m.message); err.name = m.name || 'Error'; err.workerStack = m.stack; p.reject(err); } else p.resolve(m);
+      };
+      // The worker died (for example: out of memory). Reject what was waiting and start a fresh
+      // worker; it has lost the image, so the app has to send the source again (api.lost).
+      worker.onerror = (e) => {
+        const err = new Error(L('Het rekenproces is gestopt', 'The processing worker stopped') + (e && e.message ? ': ' + e.message : ''));
+        err.workerCrash = true;
+        for (const p of pending.values()) p.reject(err);
+        pending.clear();
+        try { worker.terminate(); } catch (x) { /* already gone */ }
+        api.lost = true;
+        start();
+      };
     }
-    return {
-      isWorker: !!worker,
+    start();
+    return Object.assign(api, {
       call(msg, transfer) {
         msg.id = ++seq;
         if (worker) return new Promise((res, rej) => { pending.set(msg.id, { resolve: res, reject: rej }); worker.postMessage(msg, transfer || []); });
-        return new Promise((res, rej) => setTimeout(() => { try { const r = window.AstroCore.handle(local, msg).result; r.id = msg.id; res(r); } catch (err) { rej(err); } }, 10));
+        return new Promise((res, rej) => setTimeout(async () => {
+          try {
+            if (msg.cmd === 'decode') { const r = (await window.AstroCore.decode(msg)).result; r.id = msg.id; res(r); return; }
+            const r = window.AstroCore.handle(local, msg).result; r.id = msg.id; res(r);
+          } catch (err) { rej(err); }
+        }, 10));
       },
-    };
+    });
   })();
+
+  // --------------------------------------------------------------- errors ---
+  // User-facing message plus the technical details (kept for bug reports).
+  function describeError(e) {
+    const msg = String((e && e.message) || e || '');
+    if (e && e.workerCrash) return L('Het rekenproces is gestopt, waarschijnlijk door te weinig geheugen. Probeer een kleinere voorbeeldgrootte (Bewerken → Voorkeuren), minder lagen of 2×2 binning.', 'The processing worker stopped, probably because it ran out of memory. Try a smaller preview size (Edit → Preferences), fewer layers or 2×2 binning.');
+    if (/allocation failed|out of memory|Invalid typed array length|Array buffer allocation/i.test(msg)) return L('Te weinig geheugen voor deze bewerking. Sluit andere documenten, gebruik 2×2 binning of een kleinere exportgrootte.', 'Not enough memory for this operation. Close other documents, use 2×2 binning or a smaller export size.');
+    if (/could not be decoded|source image|decode/i.test(msg)) return L('Dit bestand kan niet worden gelezen. Het is beschadigd of het formaat wordt niet ondersteund.', 'This file cannot be read. It is damaged or the format is not supported.');
+    return msg || L('Onbekende fout', 'Unknown error');
+  }
+  function errorDetails(e, context) {
+    return [
+      'AstroPolish ' + (window.APP_VERSION || ''), 'Context: ' + (context || '-'),
+      'Error: ' + ((e && e.name) || 'Error') + ': ' + ((e && e.message) || String(e)),
+      'Worker: ' + (proc.isWorker ? 'yes' : 'no'), 'User agent: ' + navigator.userAgent,
+      '', 'Stack:', (e && (e.workerStack || e.stack)) || '-',
+    ].join('\n');
+  }
+  let errorOpen = false;
+  function showError(title, e, context) {
+    console.warn(context || title, e); // the user sees the dialog; keep the console free of 'errors'
+    if (errorOpen || $('dlg').open) { toast(title + ': ' + describeError(e), 8000); return; }
+    errorOpen = true;
+    const box = el('div', '');
+    box.appendChild(el('p', '', esc(describeError(e))));
+    const det = el('details', ''); det.appendChild(el('summary', '', esc(L('Technische details (voor een bugmelding)', 'Technical details (for a bug report)'))));
+    const pre = el('pre', 'errdetails'); pre.textContent = errorDetails(e, context); det.appendChild(pre); box.appendChild(det);
+    dialog(title, box, [{ label: L('Details kopiëren', 'Copy details'), action: async () => { try { await navigator.clipboard.writeText(pre.textContent); toast(L('Gekopieerd.', 'Copied.')); } catch (x) { toast(L('Kopiëren lukt niet; selecteer de tekst handmatig.', 'Copy failed; select the text manually.')); } return true; } }, { label: 'OK', primary: true }]);
+    const dlg = $('dlg'); const onClose = () => { errorOpen = false; dlg.removeEventListener('close', onClose); }; dlg.addEventListener('close', onClose);
+  }
+  // after a worker crash the new worker has no image: send it again
+  async function recoverWorker() { if (!proc.lost) return false; proc.lost = false; if (D()) { try { await sendSource(); } catch (e) { /* reported by sendSource */ } } return true; }
 
   // ---------------------------------------------------------------- state ---
   const GEOM0 = { rot: 0, fh: false, fv: false, angle: 0, crop: null, bin: false, scale: 1 };
@@ -87,12 +141,24 @@
     S.docs.push(d);
     return d;
   }
+  const SUPPORTED = ['fit', 'fits', 'fts', 'tif', 'tiff', 'jpg', 'jpeg', 'png', 'webp'];
   async function decodeFile(file) {
     const ext = (file.name || '').split('.').pop().toLowerCase();
-    if (['fit', 'fits', 'fts'].includes(ext)) return F.readFITS(await file.arrayBuffer());
-    if (['tif', 'tiff'].includes(ext)) return await F.readTIFF(await file.arrayBuffer());
+    const hasExt = /\.[a-z0-9]{1,5}$/i.test(file.name || '');
+    if (hasExt ? !SUPPORTED.includes(ext) : !/^image\/(jpeg|png|webp|gif|bmp|avif)$/.test(file.type || '')) {
+      throw new Error(L(`Bestandsformaat .${ext} wordt niet ondersteund. Ondersteund: FITS, TIFF, JPG, PNG en WebP.`, `File format .${ext} is not supported. Supported: FITS, TIFF, JPG, PNG and WebP.`));
+    }
+    if (['fit', 'fits', 'fts', 'tif', 'tiff'].includes(ext)) {
+      // FITS/TIFF are decoded in the background worker so the interface does not freeze
+      const buffer = await file.arrayBuffer();
+      const r = await proc.call({ cmd: 'decode', ext, buffer }, [buffer]);
+      return r.img;
+    }
     let bmp;
-    try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { bmp = await createImageBitmap(file); }
+    try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) {
+      try { bmp = await createImageBitmap(file); } catch (e2) { throw new Error(L('Dit bestand kan niet worden gelezen als afbeelding (beschadigd of niet ondersteund).', 'This file cannot be read as an image (damaged or not supported).')); }
+    }
+    if (bmp.width * bmp.height > F.MAX_PIXELS) throw new Error(L('Afbeelding is te groot.', 'Image is too large.'));
     const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
     const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(bmp, 0, 0);
     const img = E.fromRGBA(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
@@ -104,7 +170,7 @@
       overlay(L('Openen: ', 'Opening: ') + f.name);
       await nextFrame();
       try { const img = await decodeFile(f); await openImage(img, f.name); }
-      catch (e) { console.error(e); toast(L('Kan niet openen: ', 'Cannot open: ') + f.name + ' (' + (e.message || e) + ')', 6000); }
+      catch (e) { overlay(null); await recoverWorker(); showError(L('Kan niet openen: ', 'Cannot open: ') + f.name, e, 'open ' + f.name); }
     }
     overlay(null);
   }
@@ -122,8 +188,10 @@
     renderAll();
     await sendSource(!fresh);
   }
-  function closeDoc(id) {
+  function closeDoc(id, force) {
     const i = S.docs.findIndex((d) => d.id === id); if (i < 0) return;
+    const dd = S.docs[i];
+    if (!force && dd.dirty && !window.confirm(L(`"${dd.name}" heeft bewerkingen die nog niet zijn geëxporteerd of als project opgeslagen. Toch sluiten?`, `"${dd.name}" has edits that have not been exported or saved as a project. Close anyway?`))) return;
     S.docs.splice(i, 1);
     if (S.cur === id) { const n = S.docs[Math.min(i, S.docs.length - 1)]; S.cur = null; if (n) activate(n.id); else renderAll(); }
     else renderTabs();
@@ -146,9 +214,18 @@
     const d = D(); if (!d) return;
     const token = ++S.token;
     busy(L('Bron voorbereiden…', 'Preparing source…'));
-    const img = buildSource(d);
-    const res = await proc.call({ cmd: 'source', img: { w: img.w, h: img.h, r: img.r, g: img.g, b: img.b, mono: img.mono, meta: img.meta }, fileName: d.name, previewSize: S.prefs.preview }, [img.r.buffer, img.g.buffer, img.b.buffer]);
+    let res;
+    try {
+      const img = buildSource(d);
+      res = await proc.call({ cmd: 'source', img: { w: img.w, h: img.h, r: img.r, g: img.g, b: img.b, mono: img.mono, meta: img.meta }, fileName: d.name, previewSize: S.prefs.preview }, [img.r.buffer, img.g.buffer, img.b.buffer]);
+    } catch (e) {
+      busy(null);
+      if (e && e.workerCrash) proc.lost = false; // reported here; do not loop
+      showError(L('Foto kan niet worden voorbereid', 'Photo cannot be prepared'), e, 'source ' + d.name);
+      return;
+    }
     if (token !== S.token) return;
+    if (res.replaced) toast(L(`${res.replaced} ongeldige pixelwaarden (NaN/oneindig) zijn vervangen door 0.`, `${res.replaced} invalid pixel values (NaN/infinity) were replaced by 0.`), 6000);
     const sizeChanged = !d.src || d.src.w !== res.w || d.src.h !== res.h;
     d.src = { w: res.w, h: res.h }; d.prevW = res.pw; d.prevH = res.ph; d.detected = res.detected;
     if (sizeChanged) { d.cx = res.w / 2; d.cy = res.h / 2; if (d.zoom !== 'fit') clampCenter(); }
@@ -184,6 +261,7 @@
       d.history.push({ label, state: js });
       if (d.history.length > 150) d.history.shift();
       d.hIndex = d.history.length - 1;
+      if (d.history.length > 1) d.dirty = true;
       renderPanels(['history']);
     };
     if (immediate) run(); else commit.t = setTimeout(run, 500);
@@ -246,7 +324,7 @@
     let layers, autoCrop = d.autoCrop;
     if (name.startsWith('my:')) {
       const a = store.get('actions', {})[name.slice(3)]; if (!a) return;
-      layers = deep(a.layers).map((l) => Object.assign(l, { id: O.newLayer(l.op).id }));
+      layers = O.sanitizeLayers(a.layers).layers;
     } else {
       const r = O.presetLayers(name, d.detected);
       layers = r.layers; autoCrop = r.autoCrop !== false;
@@ -285,7 +363,12 @@
         draw(); renderPanels(['nav', 'hist']); renderStatus();
         if (S.curveRedraw) S.curveRedraw();
       } while (S.previewQueued);
-    } catch (e) { console.error(e); toast(String(e.message || e), 5000); }
+    } catch (e) {
+      S.previewBusy = false; busy(null);
+      if (await recoverWorker()) { showError(L('Voorbeeld kon niet worden berekend', 'Preview could not be computed'), e, 'preview'); return; }
+      showError(L('Voorbeeld kon niet worden berekend', 'Preview could not be computed'), e, 'preview');
+      return;
+    }
     S.previewBusy = false;
     busy(null);
     if (needRegion()) scheduleRegion(20);
@@ -821,7 +904,7 @@
         { label: L('Sessies combineren (stacken)…', 'Combine sessions (stack)…'), action: () => stackDialog() },
         '-',
         { label: L('Sluiten', 'Close'), shortcut: 'Ctrl+W', action: () => d && closeDoc(d.id), dis: !has },
-        { label: L('Alles sluiten', 'Close all'), action: () => { S.docs = []; S.cur = null; renderAll(); }, dis: !has },
+        { label: L('Alles sluiten', 'Close all'), action: () => { const n = S.docs.filter((x) => x.dirty).length; if (n && !window.confirm(L(`${n} document(en) hebben niet-opgeslagen bewerkingen. Toch alles sluiten?`, `${n} document(s) have unsaved edits. Close all anyway?`))) return; S.docs = []; S.cur = null; renderAll(); }, dis: !has },
         '-',
         { label: L('Exporteren als…', 'Export as…'), shortcut: 'Ctrl+S', action: exportDialog, dis: !has },
         { label: L('Snel exporteren (laatste instellingen)', 'Quick export (last settings)'), shortcut: 'Shift+Ctrl+S', action: quickExport, dis: !has },
@@ -1149,7 +1232,7 @@
     top.appendChild(bs);
     const op = el('div', 'op', `${L('Dekking', 'Opacity')}: <input type="number" min="0" max="100" step="1">%`);
     const oi = op.querySelector('input'); oi.value = ly ? Math.round(ly.opacity * 100) : 100; oi.disabled = !ly;
-    oi.onchange = () => setLayer(ly, 'opacity', clamp(+oi.value, 0, 100) / 100, L('Dekking', 'Opacity'));
+    oi.onchange = () => { const v = oi.value.trim() === '' ? NaN : +oi.value; if (!Number.isFinite(v)) { oi.value = Math.round(ly.opacity * 100); return; } setLayer(ly, 'opacity', clamp(v, 0, 100) / 100, L('Dekking', 'Opacity')); };
     top.appendChild(op); box.appendChild(top);
     const ul = el('ul', 'layers');
     for (const l of d.layers.slice().reverse()) {
@@ -1215,7 +1298,11 @@
     const show = (v) => { ni.value = fmt ? fmt(v) : (+v).toFixed(step >= 1 ? 0 : step >= 0.01 ? 2 : 3); };
     ri.value = val; show(val);
     ri.oninput = () => { show(+ri.value); onInput(+ri.value); };
-    ni.onchange = () => { const v = clamp(+ni.value, min, max); ri.value = v; onInput(v); };
+    ni.onchange = () => {
+      const raw = ni.value.trim() === '' ? NaN : +ni.value;
+      if (!Number.isFinite(raw)) { show(+ri.value); return; } // ignore invalid input, keep the current value
+      const v = clamp(raw, min, max); ri.value = v; show(v); onInput(v);
+    };
     box.appendChild(row);
     return row;
   }
@@ -1629,8 +1716,8 @@
       const blob = await renderFull(D(), P);
       overlay(null);
       const saved = await saveBlob(blob, `${name}.${P.format}`);
-      if (saved) toast(L('Opgeslagen: ', 'Saved: ') + saved);
-    } catch (e) { console.error(e); overlay(null); toast(String(e.message || e), 6000); }
+      if (saved) { toast(L('Opgeslagen: ', 'Saved: ') + saved); const d = D(); if (d) d.dirty = false; }
+    } catch (e) { overlay(null); await recoverWorker(); showError(L('Exporteren is mislukt', 'Export failed'), e, `export ${P.format} ${P.size}`); }
   }
   function compareLayers(d) { return d.original.meta && d.original.meta.linear ? [O.newLayer('stretch', { method: 'auto', brightness: 0.2, colorPreserve: 0 })] : null; }
   async function renderFull(d, P) {
@@ -1662,7 +1749,13 @@
       try {
         const h = await window.showSaveFilePicker({ suggestedName: name, types: t ? [{ description: t[0], accept: { [t[1]]: [t[2]] } }] : undefined });
         const w = await h.createWritable(); await w.write(blob); await w.close(); return h.name;
-      } catch (e) { if (e && e.name === 'AbortError') return null; }
+      } catch (e) {
+        if (e && e.name === 'AbortError') return null;
+        // writing to the chosen file failed (disk full, no permission...): the original file is left
+        // untouched by the File System Access API; fall back to a normal download and say so
+        console.error(e);
+        toast(L('Opslaan op de gekozen plek lukte niet (', 'Saving to the chosen location failed (') + (e.message || e) + L('). Het bestand wordt gedownload.', '). The file is downloaded instead.'), 8000);
+      }
     }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
@@ -1670,19 +1763,34 @@
   }
   async function saveProject() {
     const d = D(); if (!d) return;
-    await saveBlob(new Blob([JSON.stringify({ app: 'AstroPolish', type: 'project', version: 3, file: d.name, layers: d.layers, geom: d.geom, autoCrop: d.autoCrop }, null, 2)], { type: 'application/json' }), baseName(d.name) + '.astropolish.json');
+    try {
+      const saved = await saveBlob(new Blob([JSON.stringify({ app: 'AstroPolish', type: 'project', version: 3, appVersion: window.APP_VERSION || '', file: d.name, layers: d.layers, geom: d.geom, autoCrop: d.autoCrop }, null, 2)], { type: 'application/json' }), baseName(d.name) + '.astropolish.json');
+      if (saved) { d.dirty = false; toast(L('Project opgeslagen: ', 'Project saved: ') + saved + L(' (bewaar het samen met de originele foto)', ' (keep it together with the original photo)'), 6000); }
+    } catch (e) { showError(L('Project opslaan is mislukt', 'Saving the project failed'), e, 'save project'); }
   }
   function importJSON(kind) {
     const inp = $('jsonInput');
     inp.onchange = async () => {
       const f = inp.files[0]; inp.value = ''; if (!f) return;
-      try {
-        const js = JSON.parse(await f.text());
-        if (js.type === 'actions' || kind === 'actions') { store.set('actions', Object.assign(store.get('actions', {}), js.actions || {})); renderPanels(['actions']); toast(L('Acties geïmporteerd.', 'Actions imported.')); return; }
-        const d = D(); if (!d) return;
-        if (js.layers) { d.layers = js.layers; d.sel = null; if (js.geom) d.geom = Object.assign(deep(GEOM0), js.geom); if (js.autoCrop !== undefined) d.autoCrop = js.autoCrop; await sendSource(); renderPanels(); commit(L('Project geladen', 'Project loaded'), true); toast(L('Project geladen.', 'Project loaded.')); }
-        else toast(L('Geen lagen in dit bestand.', 'No layers in this file.'));
-      } catch (e) { toast(L('Dit bestand kan niet worden gelezen.', 'This file cannot be read.')); }
+      let js;
+      try { js = JSON.parse(await f.text()); } catch (e) { showError(L('Dit bestand kan niet worden gelezen', 'This file cannot be read'), new Error(L('Geen geldig JSON-bestand: ', 'Not a valid JSON file: ') + e.message), 'import ' + f.name); return; }
+      if (!js || typeof js !== 'object' || (js.app && js.app !== 'AstroPolish')) { toast(L('Dit is geen AstroPolish-bestand.', 'This is not an AstroPolish file.'), 6000); return; }
+      if (js.type === 'actions' || kind === 'actions') {
+        const acts = {}; let dropped = 0;
+        for (const [n, a] of Object.entries(js.actions || {})) { const r = O.sanitizeLayers(a && a.layers); dropped += r.dropped; if (r.layers.length) acts[String(n).slice(0, 50)] = { layers: r.layers }; }
+        store.set('actions', Object.assign(store.get('actions', {}), acts)); renderPanels(['actions']);
+        toast(L(`${Object.keys(acts).length} acties geïmporteerd.`, `${Object.keys(acts).length} actions imported.`) + (dropped ? L(` ${dropped} onbekende lagen overgeslagen.`, ` ${dropped} unknown layers skipped.`) : ''), 6000);
+        return;
+      }
+      const d = D(); if (!d) { toast(L('Open eerst de foto waar dit project bij hoort.', 'First open the photo this project belongs to.'), 6000); return; }
+      if (!Array.isArray(js.layers)) { toast(L('Geen lagen in dit bestand.', 'No layers in this file.')); return; }
+      const r = O.sanitizeLayers(js.layers);
+      d.layers = r.layers; d.sel = null;
+      if (js.geom && typeof js.geom === 'object') d.geom = O.sanitizeGeom(js.geom, GEOM0);
+      if (typeof js.autoCrop === 'boolean') d.autoCrop = js.autoCrop;
+      await sendSource(); renderPanels(); commit(L('Project geladen', 'Project loaded'), true);
+      const other = js.file && js.file !== d.name ? L(` Let op: gemaakt voor "${js.file}".`, ` Note: made for "${js.file}".`) : '';
+      toast(L('Project geladen.', 'Project loaded.') + (r.dropped ? L(` ${r.dropped} onbekende of ongeldige lagen overgeslagen.`, ` ${r.dropped} unknown or invalid layers skipped.`) : '') + other, 7000);
     };
     inp.click();
   }
@@ -1690,14 +1798,14 @@
     const d = D(); if (!d) return;
     const box = el('div', 'grid2');
     box.innerHTML = `<span>${L('Schaal', 'Scale')}</span><span><input type="number" id="szP" min="10" max="400" step="1" style="width:70px"> %</span><span>Binning</span><label><input type="checkbox" id="szB"> 2×2 (${L('halve grootte, minder ruis', 'half size, less noise')})</label><span></span><span class="pnote">${L('Huidig', 'Current')}: ${d.src.w} × ${d.src.h} px</span>`;
-    dialog(L('Afbeeldingsgrootte', 'Image size'), box, [{ label: L('Annuleren', 'Cancel') }, { label: 'OK', primary: true, action: () => { d.geom.bin = $('szB').checked; setGeom('scale', clamp(+$('szP').value, 10, 400) / 100, L('Afbeeldingsgrootte', 'Image size')); } }]);
+    dialog(L('Afbeeldingsgrootte', 'Image size'), box, [{ label: L('Annuleren', 'Cancel') }, { label: 'OK', primary: true, action: () => { const v = +$('szP').value; if ($('szP').value.trim() === '' || !Number.isFinite(v)) { toast(L('Vul een percentage tussen 10 en 400 in.', 'Enter a percentage between 10 and 400.')); return true; } d.geom.bin = $('szB').checked; setGeom('scale', clamp(v, 10, 400) / 100, L('Afbeeldingsgrootte', 'Image size')); } }]);
     $('szP').value = Math.round((d.geom.scale || 1) * 100); $('szB').checked = !!d.geom.bin;
   }
   function rotateDialog() {
     const d = D(); if (!d) return;
     const box = el('div', 'grid2');
     box.innerHTML = `<span>${L('Hoek (graden)', 'Angle (degrees)')}</span><input type="number" id="rtA" min="-45" max="45" step="0.1" style="width:90px"><span></span><span class="pnote">${L('Positief = rechtsom. Lege hoeken worden automatisch weggesneden. Tip: meet een hoek met de liniaal (R).', 'Positive = clockwise. Empty corners are cropped automatically. Tip: measure an angle with the ruler (R).')}</span>`;
-    dialog(L('Rechtzetten', 'Straighten'), box, [{ label: L('Annuleren', 'Cancel') }, { label: 'OK', primary: true, action: () => setGeom('angle', clamp(+$('rtA').value, -45, 45), L('Rechtzetten', 'Straighten')) }]);
+    dialog(L('Rechtzetten', 'Straighten'), box, [{ label: L('Annuleren', 'Cancel') }, { label: 'OK', primary: true, action: () => { const v = +$('rtA').value; if ($('rtA').value.trim() === '' || !Number.isFinite(v)) { toast(L('Vul een hoek tussen -45 en 45 graden in.', 'Enter an angle between -45 and 45 degrees.')); return true; } setGeom('angle', clamp(v, -45, 45), L('Rechtzetten', 'Straighten')); } }]);
     $('rtA').value = d.geom.angle || 0;
   }
   function prefsDialog() {
@@ -1900,6 +2008,9 @@
     openFiles(files);
   });
   $('fileInput').onchange = (e) => { const f = [...e.target.files]; e.target.value = ''; openFiles(f); };
+
+  // warn before closing the window/tab with unsaved edits (Electron shows its own dialog for this)
+  window.addEventListener('beforeunload', (e) => { if (S.docs.some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; } });
 
   // ---------------------------------------------------------------- init ---
   renderAll();
