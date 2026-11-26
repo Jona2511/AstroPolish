@@ -2,7 +2,9 @@
 
 **English** · [Nederlands](#nederlands)
 
-## Unreleased
+## 3.4.0 — 2026-11-26
+
+Thanks to the testers on Reddit for their honest feedback, which made this release possible.
 
 Based on feedback from testers on Reddit: none of the automatic modes gave a usable result on a real stacked M42, the stretches were badly tuned (white cores, greenish/teal sky), and beginners need more guidance. The presets and the simple workflow were appreciated, so they stay; this update makes them better.
 
@@ -61,7 +63,9 @@ Honest notes: faint detail is a little darker in absolute terms because the whol
 
 ## Nederlands
 
-### Nog niet uitgebracht
+### 3.4.0 — 26-11-2026
+
+Met dank aan de testers op Reddit voor hun eerlijke feedback.
 
 Naar aanleiding van feedback van testers op Reddit: geen enkele automatische modus gaf een bruikbaar resultaat op een echte gestackte M42, de stretches waren slecht afgesteld (witte kernen, groenige/blauwgroene lucht) en beginners hebben meer begeleiding nodig.
 

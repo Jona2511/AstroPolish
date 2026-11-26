@@ -147,6 +147,14 @@ jobs:
           else
             echo "released=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Compose release notes
+        if: steps.exists.outputs.released == 'false'
+        shell: bash
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # what changed in this version (RELEASE_NOTES.md), then the download instructions
+          cat RELEASE_NOTES.md .github/release-download.md | sed "s/__VERSION__/${VERSION}/g" > release-body.md
       - name: Publish release
         if: steps.exists.outputs.released == 'false'
         uses: softprops/action-gh-release@v2
@@ -158,12 +166,4 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.zip
-          body: |
-            **Download voor Windows**
-            - `AstroPolish-${{ steps.v.outputs.version }}-portable.exe`: direct starten, niets installeren
-            - `AstroPolish-${{ steps.v.outputs.version }}-setup.exe`: installeren met snelkoppeling op het bureaublad
-
-            **Download voor macOS** (Apple Silicon en Intel, macOS 12 of nieuwer)
-            - `AstroPolish-${{ steps.v.outputs.version }}-mac.dmg`: openen en AstroPolish naar Programma's slepen
-
-            De app is niet digitaal ondertekend. Windows SmartScreen: kies *Meer informatie* → *Toch uitvoeren*. macOS: open de app één keer, ga naar *Systeeminstellingen → Privacy en beveiliging* en kies *Open toch*.
+          body_path: release-body.md

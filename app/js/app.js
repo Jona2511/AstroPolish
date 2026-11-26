@@ -1,7 +1,7 @@
 /* AstroPolish v3 - Photoshop-style interface with adjustment layers */
 (function () {
   'use strict';
-  window.APP_VERSION = '3.3.0'; // keep in sync with package.json (checked by test/release-test.js)
+  window.APP_VERSION = '3.4.0'; // keep in sync with package.json (checked by test/release-test.js)
   const E = window.AstroEngine, O = window.AstroOps, F = window.AstroFormats, I18N = window.I18N;
   const $ = (id) => document.getElementById(id);
   const L = (nl, en) => (I18N.getLang() === 'en' ? en : nl);
