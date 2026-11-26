@@ -631,7 +631,7 @@
     if (!img) img = E.cloneImage(src);
     for (let i = start + 1; i < layers.length; i++) {
       const L = layers[i];
-      const op = OPS[L.op];
+      const op = Object.prototype.hasOwnProperty.call(OPS, L.op) ? OPS[L.op] : null; // never 'constructor' etc.
       if (L.on && op && L.op !== 'text') {
         if (opts.onStep) opts.onStep(L.op, i);
         let ctx = store.ctx.get(keys[i]);
@@ -659,7 +659,71 @@
     return img;
   }
 
-  const api = { OPS, GROUPS, BLENDS: Object.keys(BLENDS), defaults, newLayer, presetLayers, processStack, computeMask, inpaint };
+  // ------------------------------------------------- validation of loaded projects ---
+  // Projects/actions come from files: keep only well-formed layers of known operations and coerce
+  // every field to its expected type, so a damaged or hand-edited file cannot break the editor.
+  const isOp = (op) => typeof op === 'string' && Object.prototype.hasOwnProperty.call(OPS, op);
+  const MASK_TYPES = ['none', 'paint', 'lum', 'hue', 'stars', 'nostars', 'signal', 'background', 'shape'];
+  const num = (v, d, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+  function sanitizePts(pts) { return Array.isArray(pts) ? pts.filter((p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1])).slice(0, 20000).map((p) => [num(p[0], 0, -1, 2), num(p[1], 0, -1, 2)]) : []; }
+  function sanitizeStrokes(st) {
+    return Array.isArray(st) ? st.filter((s) => s && typeof s === 'object').slice(0, 2000).map((s) => ({ pts: sanitizePts(s.pts), r: num(s.r, 0.01, 1e-5, 1), hard: num(s.hard, 0.5, 0, 1), a: num(s.a, 1, 0, 1), mode: s.mode === 'hide' ? 'hide' : 'show' })).filter((s) => s.pts.length) : [];
+  }
+  function sanitizeParams(op, params) {
+    const out = defaults(op), src = params && typeof params === 'object' ? params : {};
+    for (const d of OPS[op].p) {
+      const v = src[d.k];
+      if (v === undefined) continue;
+      switch (d.t) {
+        case 'r': out[d.k] = num(v, d.d, d.min, d.max); break;
+        case 'c': out[d.k] = !!v; break;
+        case 's': if (d.o.some((o) => o[0] === v)) out[d.k] = v; break;
+        case 'color': if (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)) out[d.k] = v; break;
+        case 'pick': out[d.k] = v && Number.isFinite(v.x) && Number.isFinite(v.y) ? { x: num(v.x, 0.5, 0, 1), y: num(v.y, 0.5, 0, 1) } : null; break;
+        case 'wav': if (Array.isArray(v)) out[d.k] = Array.from({ length: 6 }, (_, i) => num(v[i], 0, -1, 3)); break;
+        case 'curves': if (v && typeof v === 'object') { const c = {}; for (const k of ['rgb', 'r', 'g', 'b']) { const p = sanitizePts(v[k]); if (p.length >= 2) c[k] = p.map(([x, y]) => [num(x, 0, 0, 1), num(y, 0, 0, 1)]); } out[d.k] = c; } break;
+        case 'hsl': if (v && typeof v === 'object') { const h = {}; for (const k of Object.keys(v).slice(0, 8)) if (Array.isArray(v[k])) h[k] = [num(v[k][0], 0, -1, 1), num(v[k][1], 1, 0, 2.5), num(v[k][2], 0, -1, 1)]; out[d.k] = h; } break;
+        default: break;
+      }
+    }
+    // free-form params used by some ops
+    if (op === 'heal') out.strokes = sanitizeStrokes(src.strokes);
+    if (op === 'text') for (const k of ['text', 'sub', 'font', 'color', 'align']) if (typeof src[k] === 'string') out[k] = src[k].slice(0, 200);
+    if (op === 'text') { for (const k of ['x', 'y']) out[k] = num(src[k], k === 'x' ? 0.05 : 0.9, 0, 1); out.size = num(src.size, 0.045, 0.005, 0.5); out.bold = src.bold !== false; out.shadow = src.shadow !== false; }
+    return out;
+  }
+  function sanitizeLayers(list) {
+    const layers = []; let dropped = 0;
+    if (!Array.isArray(list)) return { layers, dropped: 0 };
+    for (const l of list.slice(0, 200)) {
+      if (!l || typeof l !== 'object' || !isOp(l.op)) { dropped++; continue; }
+      const ly = newLayer(l.op, sanitizeParams(l.op, l.params));
+      ly.on = l.on !== false;
+      ly.opacity = num(l.opacity, 1, 0, 1);
+      ly.blend = Object.prototype.hasOwnProperty.call(BLENDS, l.blend) ? l.blend : 'normal';
+      if (typeof l.name === 'string' && l.name) ly.name = l.name.slice(0, 80);
+      const m = l.mask && typeof l.mask === 'object' ? l.mask : {};
+      ly.mask = {
+        type: MASK_TYPES.includes(m.type) ? m.type : 'none', invert: !!m.invert, feather: num(m.feather, 0, 0, 2), density: num(m.density, 1, 0, 1),
+        strokes: sanitizeStrokes(m.strokes), lo: num(m.lo, 0.5, 0, 1), hi: num(m.hi, 1, 0, 1.5), soft: num(m.soft, 0.1, 0.005, 0.5),
+        hue: num(m.hue, 0, 0, 360), width: num(m.width, 40, 5, 120), size: num(m.size, 0.5, 0, 1), shapeFeather: num(m.shapeFeather, 0, 0, 0.2),
+        shape: m.shape && typeof m.shape === 'object' && ['rect', 'ellipse'].includes(m.shape.kind) ? { kind: m.shape.kind, x: num(m.shape.x, 0, 0, 1), y: num(m.shape.y, 0, 0, 1), w: num(m.shape.w, 1, 0, 1), h: num(m.shape.h, 1, 0, 1) } : null,
+      };
+      layers.push(ly);
+    }
+    return { layers, dropped };
+  }
+  function sanitizeGeom(g, base) {
+    const o = JSON.parse(JSON.stringify(base));
+    if (!g || typeof g !== 'object') return o;
+    o.rot = [0, 1, 2, 3].includes(g.rot) ? g.rot : 0; o.fh = !!g.fh; o.fv = !!g.fv; o.bin = !!g.bin;
+    o.angle = num(g.angle, 0, -45, 45); o.scale = num(g.scale, 1, 0.1, 4);
+    const c = g.crop;
+    o.crop = c && typeof c === 'object' && [c.x, c.y, c.w, c.h].every(Number.isFinite) && c.w > 0.001 && c.h > 0.001 ? { x: num(c.x, 0, 0, 1), y: num(c.y, 0, 0, 1), w: num(c.w, 1, 0.001, 1), h: num(c.h, 1, 0.001, 1) } : null;
+    return o;
+  }
+
+  const api = { OPS, GROUPS, BLENDS: Object.keys(BLENDS), defaults, newLayer, presetLayers, processStack, computeMask, inpaint, sanitizeLayers, sanitizeGeom };
   root.AstroOps = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);
