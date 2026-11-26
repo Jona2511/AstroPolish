@@ -1,7 +1,7 @@
 {
   "name": "astropolish",
   "productName": "AstroPolish",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi, met alle tools van de grote programma's.",
   "main": "electron/main.js",
   "author": "Jonathan van Zijverden",
