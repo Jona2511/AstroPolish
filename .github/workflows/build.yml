@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Playwright (uses the runner's Google Chrome)
-        run: pip install playwright==1.48.0
+        run: pip install playwright==1.63.0
       - name: Interface test (full workflow in Chrome)
         run: |
           cd app && python -m http.server 8765 &
