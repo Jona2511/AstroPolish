@@ -1,7 +1,7 @@
 # ✨ AstroPolish
 
-**Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi, met de tools van de grote programma's in één simpele app.**
-Foto erin slepen, stijl aanklikken, opslaan. Wie verder wil, vindt in acht tabbladen alles wat je anders met Siril, GraXpert, StarNet, SetiAstro, RegiStax en Photoshop-acties doet.
+**Astrofoto-editor voor de Dwarf 3 (en andere smart-telescopen), opgezet zoals Adobe Photoshop: menubalk, gereedschappen, optiebalk, documenttabs en panelen, met niet-destructieve aanpassingslagen.**
+Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebouwd uit lagen die je allemaal nog kunt aanpassen, verbergen, maskeren en mengen.
 
 ![AstroPolish](docs/screenshot.png)
 
@@ -16,18 +16,35 @@ Foto erin slepen, stijl aanklikken, opslaan. Wie verder wil, vindt in acht tabbl
 
 ## Alles wat erin zit
 
-**Eén klik: 19 stijlen.**
+**Photoshop-werkruimte.**
+- Menubalk (Bestand, Bewerken, Afbeelding, Laag, Selecteren, Filter, Astro, Weergave, Venster, Help) met de bekende Photoshop-sneltoetsen (Ctrl+L, Ctrl+M, Ctrl+U, Ctrl+B, Ctrl+J, Ctrl+Z…).
+- Gereedschapsbalk: verplaatsen, hand, zoom, rechthoek- en ovaalselectie, bijsnijden, pipet, sterinfo (FWHM), liniaal/rechtzetten, penseel en gum voor laagmaskers, herstelpenseel (satellietstrepen) en tekst.
+- Optiebalk per gereedschap, meerdere documenten in tabbladen, statusbalk met pixelwaarden.
+- Panelen: Navigator, Histogram, Info, Eigenschappen, Aanpassingen, Lagen, Geschiedenis (met momentopnamen) en Acties. Panelen aan/uit via *Venster*.
+
+**Lagen.**
+- 53 bewerkingen als aanpassingslaag; elke laag heeft dekking, 13 overvloeimodi (bleken, bedekken, zacht licht, kleur, lichtsterkte…) en een masker.
+- Maskers op helderheidsbereik, kleurbereik, alleen sterren, alles behalve sterren, object, achtergrond of selectie, plus schilderen met penseel/gum, doezelaar, dichtheid en omkeren. Alt+klik toont het masker.
+- Lagen slepen, dupliceren, hernoemen en verbergen. Het origineel blijft altijd onaangetast.
+- Projecten opslaan als .json en later weer openen.
+
+**Acties: 19 stijlen met één klik.**
 - *Deep-sky*: Automatisch, Nevel, Sterrenstelsel, Sterrenhoop, Melkweg/breed, Maximaal helder, Natuurlijk, Zonder sterren, Star spikes, Dromerig en Zwart-wit.
 - *Duoband-filter*: HOO, Foraxx en Hubble-stijl.
 - *Zonnestelsel*: Maan, Kleurrijke maan, Zon, Zon oranje (H-alpha-look) en Planeet.
-- Daarnaast je **eigen stijlen**: bewaren, exporteren en importeren.
+- Je **eigen acties** opnemen, exporteren en importeren. Batchverwerking met elke actie.
+
+**Photoshop-aanpassingen.**
+- Helderheid/contrast, niveaus, curven (per kanaal), belichting, levendigheid, kleurtoon/verzadiging, HSL per kleur, kleurbalans, witbalans, fotofilter, zwart-wit, kanaalmixer, negatief, posterize, drempel, verloop toewijzen, schaduwen/hooglichten en automatische tint/contrast/kleur.
+- Filters: Gaussiaans vervagen, mediaan, oppervlakte vervagen, minimum, maximum, onscherp masker, hoogdoorlaat, helderheid (clarity), nevel verwijderen (dehaze), CLAHE, reliëf, randen zoeken, korrel, gloed, vignet, stof en krassen.
 
 **Automatisch herkennen en analyseren.**
 - Herkent het object via de FITS-header of bestandsnaam (alle 110 Messier-objecten en veel bekende namen), en een maan of zon aan de foto zelf.
-- Een checklist laat zien wat de app ziet: stackranden, lichtvervuiling, groene zweem, ruisniveau, aantal sterren en scherpte (FWHM). Herkent ook de duoband-filter.
+- Info-paneel met stackranden, lichtvervuiling, groene zweem, ruisniveau, aantal sterren en scherpte (FWHM), plus de volledige FITS-header.
 
 **Licht.**
-- Oprekken met vier methoden: Automatisch (STF), Arcsinh, GHS (Generalized Hyperbolic Stretch) en Niveaus.
+- Oprekken met zeven methoden: Automatisch (STF), statistisch, Arcsinh, GHS (Generalized Hyperbolic Stretch), logaritmisch, niveaus en handmatig.
+- HDR-multischaaltransformatie.
 - Helderheid, zwartpunt, kleurbehoud en HDR-bescherming van felle kernen.
 - Contrast, niveaus (zwart/gamma/wit) en een **curves-editor** per kanaal.
 
@@ -40,7 +57,7 @@ Foto erin slepen, stijl aanklikken, opslaan. Wie verder wil, vindt in acht tabbl
 - Zwart-wit, negatief en inkleuren.
 
 **Detail.**
-- Ruisonderdrukking: snel (randbehoudend) of met wavelets. Kleurruis apart, en een gladdere achtergrond.
+- Ruisonderdrukking: randbehoudend, wavelets, mediaan of bilateraal. Kleurruis apart, en een gladdere achtergrond.
 - Lokaal contrast, verscherpen, **deconvolutie** (Richardson-Lucy) en **6 wavelet-lagen zoals in RegiStax**.
 
 **Sterren.**
@@ -75,7 +92,7 @@ Foto erin slepen, stijl aanklikken, opslaan. Wie verder wil, vindt in acht tabbl
 - Stack meerdere nachten van hetzelfde object.
 - Automatisch uitlijnen op de sterren (verschuiving en rotatie) en normaliseren.
 
-**Meerdere foto's tegelijk** bewerken.
+**Meerdere foto's tegelijk** openen in tabbladen, en batchverwerking.
 
 **Opslaan.**
 - Als JPG, PNG, WebP, TIFF 16-bit of FITS 32-bit.
@@ -97,7 +114,8 @@ Foto erin slepen, stijl aanklikken, opslaan. Wie verder wil, vindt in acht tabbl
 - Gebruik het gestackte **FITS**-bestand als het kan. Daar zit veel meer informatie in dan in de JPG.
 - **Duoband-filter**: probeer de stijlen HOO, Foraxx of Hubble.
 - **Meerdere avonden** hetzelfde object? Gebruik *Sessies combineren*.
-- Een FITS die ondersteboven binnenkomt draai je om via *Beeld* → *Ondersteboven*.
+- Een FITS die ondersteboven binnenkomt draai je om via *Afbeelding* → *Afbeelding roteren* → *180°*.
+- Satellietstreep? Pak het herstelpenseel (J) en schilder eroverheen.
 
 ## Zelf bouwen
 
@@ -117,15 +135,16 @@ Elke push naar `main` bouwt de Windows-app via GitHub Actions. Een nieuw versien
 ```
 app/              web-app (HTML/CSS/JS, geen dependencies)
   js/engine.js    beeldbewerking: gradient, kleur, stretch, ruis, sterren, wavelets, spikes…
+  js/ops.js       lagen-engine: 53 bewerkingen, maskers, overvloeimodi, cache
   js/stack.js     sessies uitlijnen (driehoek-matching + RANSAC) en combineren
   js/formats.js   FITS- en TIFF-lezer, TIFF16- en FITS-schrijver
   js/core.js      opdrachten voor het achtergrondproces
   js/worker.js    rekent op de achtergrond, zodat de interface soepel blijft
   js/app.js       interface
 electron/main.js  Windows-app
-test/             tests (engine, bestandsformaten, stacken, interface)
+test/             tests (engine, lagen, bestandsformaten, stacken, interface)
 ```
 
 ---
 
-*English:* AstroPolish is a free, open-source astrophoto editor for smart telescopes (Dwarf 3, Seestar, Vespera…). It offers one-click styles plus GHS/arcsinh stretching, gradient removal, colour calibration, HOO/Foraxx palettes, curves, HSL, deconvolution, wavelets, star reduction/removal, star spikes, multi-night stacking, batch processing and many export sizes. Everything runs locally. MIT licence.
+*English:* AstroPolish is a free, open-source astrophoto editor for smart telescopes (Dwarf 3, Seestar, Vespera…) with a Photoshop-style workspace and non-destructive adjustment layers (masks, 13 blend modes, 53 operations). It offers one-click styles plus GHS/arcsinh stretching, gradient removal, colour calibration, HOO/Foraxx palettes, curves, HSL, deconvolution, wavelets, star reduction/removal, star spikes, multi-night stacking, batch processing and many export sizes. Everything runs locally. MIT licence.

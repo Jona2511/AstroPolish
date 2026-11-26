@@ -1,105 +1,143 @@
-# UI test (v2) with Playwright + Chrome:
-#   python3 test/ui-test.py <url> <testfiles-dir> <outdir>
-# testfiles: run test/make-test-files.py first.
-import sys, time, os, json
+"""UI smoke test for AstroPolish v3 (Photoshop-style UI). Needs: python3 -m http.server 8765 in app/."""
+import sys, os
 from playwright.sync_api import sync_playwright
-url, tdir, out = sys.argv[1], sys.argv[2], sys.argv[3]
-os.makedirs(out, exist_ok=True)
+
+URL = os.environ.get('URL', 'http://localhost:8765/')
+OUT = os.environ.get('OUT', '/tmp/ui')
+os.makedirs(OUT, exist_ok=True)
 errors = []
-def log(*a): print(*a, flush=True)
+
+def wait_idle(page, t=60000):
+    page.wait_for_function("() => document.getElementById('busy').classList.contains('hidden') && !window.AstroApp.S.previewBusy && !window.AstroApp.S.previewPending", timeout=t)
+    page.wait_for_timeout(150)
+
 with sync_playwright() as p:
     b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
-    pg = b.new_page(viewport={'width': 1500, 'height': 920}, accept_downloads=True, locale='nl-NL')
-    pg.on('console', lambda m: m.type == 'error' and errors.append(m.text))
-    pg.on('pageerror', lambda e: errors.append(str(e)))
-    pg.on('dialog', lambda d: d.accept('Testpreset'))
-    pg.goto(url)
-    pg.evaluate('window.showSaveFilePicker = undefined; window.showDirectoryPicker = undefined')
-    log('worker:', pg.evaluate('AstroApp.isWorker'))
-    def idle(extra=0.4):
-        pg.wait_for_function('!AstroApp.S.previewBusy && document.getElementById("overlay").classList.contains("hidden")', timeout=90000)
-        time.sleep(extra)
-    shot = lambda n: pg.screenshot(path=f'{out}/{n}.png')
-    pg.click('#btnDemo'); idle(1)
-    shot('01_style')
-    for tab in ['light', 'colour', 'detail', 'stars', 'effect', 'image', 'info']:
-        pg.click(f'.tab[data-tab="{tab}"]'); time.sleep(0.5); shot(f'02_tab_{tab}')
-    # presets
-    pg.click('.tab[data-tab="style"]')
-    for pr in ['hoo', 'foraxx', 'hubble', 'starless', 'spikes', 'dreamy']:
-        pg.click(f'[data-preset="{pr}"]'); idle(); pg.click('[data-view="after"]'); time.sleep(0.2); shot(f'03_preset_{pr}')
-    pg.click('[data-preset="nebula"]'); idle()
-    # slider change + undo/redo
-    before = pg.evaluate('AstroApp.S.params.brightness')
-    pg.evaluate("AstroApp.setParam('brightness', 0.35)"); time.sleep(0.6); idle()
-    pg.click('#btnUndo'); idle()
-    after_undo = pg.evaluate('AstroApp.S.params.brightness')
-    pg.click('#btnRedo'); idle()
-    log('undo/redo brightness', before, after_undo, pg.evaluate('AstroApp.S.params.brightness'))
-    # curves: click in the curve canvas
-    pg.click('.tab[data-tab="light"]'); time.sleep(0.3)
-    pg.locator('.curvecanvas').scroll_into_view_if_needed(); box = pg.locator('.curvecanvas').bounding_box()
-    pg.mouse.click(box['x'] + box['width'] * 0.5, box['y'] + box['height'] * 0.35); idle()
-    log('curve points', json.dumps(pg.evaluate('AstroApp.S.params.curves && AstroApp.S.params.curves.rgb')))
-    # GHS mode
-    pg.locator('label.select select').first.select_option('ghs'); idle(); shot('04_ghs')
-    # HSL
-    pg.click('.tab[data-tab="colour"]'); time.sleep(0.3)
-    pg.evaluate("AstroApp.setParam('hsl', {red:[0.3,1.6,0.1]})"); idle(); shot('05_hsl')
-    # view modes
-    for vm in ['stars', 'starless', 'gradient', 'clip']:
-        pg.select_option('#viewMode', vm); idle(); shot(f'06_view_{vm}')
-    pg.select_option('#viewMode', 'normal'); idle()
-    # crop tool
-    pg.click('#btnCrop'); time.sleep(0.3)
-    sb = pg.locator('#stage').bounding_box()
-    pg.mouse.move(sb['x'] + sb['width'] * 0.3, sb['y'] + sb['height'] * 0.3); pg.mouse.down()
-    pg.mouse.move(sb['x'] + sb['width'] * 0.75, sb['y'] + sb['height'] * 0.8, steps=5); time.sleep(0.2); shot('07_crop_tool')
-    pg.mouse.up(); pg.click('#toolApply'); idle(1)
-    log('after crop', pg.evaluate('JSON.stringify(AstroApp.S.src)'), pg.evaluate('JSON.stringify(AstroApp.S.geom.crop)'))
-    # white balance picker
-    pg.click('#btnPickWB'); time.sleep(0.2)
-    pg.mouse.click(sb['x'] + sb['width'] * 0.5, sb['y'] + sb['height'] * 0.5); idle()
-    log('wbPick', pg.evaluate('JSON.stringify(AstroApp.S.params.wbPick)'))
-    # straighten + bin
-    pg.evaluate("AstroApp.setGeom('angle', 3)"); idle(1)
-    log('after angle', pg.evaluate('JSON.stringify(AstroApp.S.src)'))
-    # snapshot compare
-    pg.click('#btnSnap'); idle(1); pg.evaluate("AstroApp.setParam('saturation', 2.5)"); idle(1); shot('08_snapshot')
-    # zoom
-    pg.click('[data-zoom="1"]'); time.sleep(3); idle(); shot('09_zoom')
-    pg.click('[data-zoom="fit"]')
-    # text overlay
-    pg.click('.tab[data-tab="effect"]'); time.sleep(0.3)
-    pg.locator('label.check input').first.check(); time.sleep(0.5); shot('10_text')
-    # saves
-    for fmt, size in [('jpg', 'orig'), ('png', 'ig45'), ('webp', 'cmp'), ('tif', '2k'), ('fits', 'orig'), ('jpg', 'up2')]:
-        pg.select_option('#format', fmt); pg.select_option('#exportSize', size)
-        with pg.expect_download(timeout=180000) as d:
-            pg.click('#btnSave')
-        fn = f'{out}/save_{size}.{fmt}'; d.value.save_as(fn); log('saved', d.value.suggested_filename, os.path.getsize(fn))
-    # own preset
-    pg.click('.tab[data-tab="style"]'); time.sleep(0.3)
-    pg.get_by_text('Huidige instellingen bewaren').click(); time.sleep(0.5)
-    log('my presets', pg.evaluate("Object.keys(JSON.parse(localStorage.getItem('ap-presets')||'{}'))"))
-    # project export
-    with pg.expect_download() as d:
-        pg.get_by_text('Instellingen opslaan').click()
-    d.value.save_as(f'{out}/project.json'); log('project keys', list(json.load(open(f'{out}/project.json')).keys()))
-    # real files
-    for f in ['rgb16.fits', 'maan_test.jpg', 'bayer.fits']:
-        pg.set_input_files('#fileInput', f'{tdir}/{f}'); idle(1.5)
-        log(f, '->', pg.inner_text('.detected') if pg.locator('.detected').count() else '', '|', pg.evaluate('AstroApp.S.preset'))
-    shot('11_moon_or_last')
-    # stacking
-    pg.click('#btnStack')
-    pg.set_input_files('#stackInput', [f'{tdir}/sessie1_M 27.fits', f'{tdir}/sessie2_M 27.fits', f'{tdir}/sessie3_M 27.fits'])
-    pg.click('#stackStart')
-    pg.wait_for_function('document.getElementById("fileInfo").textContent.includes("gecombineerd")', timeout=180000); idle(1)
-    log('stacked file', pg.inner_text('#fileInfo'))
-    shot('12_stacked')
-    # language switch
-    pg.click('[data-lang="en"]'); time.sleep(0.4); shot('13_en'); pg.click('[data-lang="nl"]')
-    pg.set_viewport_size({'width': 820, 'height': 1000}); time.sleep(0.5); shot('14_small')
+    page = b.new_page(viewport={'width': 1600, 'height': 950})
+    page.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
+    page.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' else None)
+    page.goto(URL)
+    page.wait_for_selector('#menubar .mtop')
+    page.screenshot(path=f'{OUT}/0-start.png')
+    assert page.evaluate('AstroApp.isWorker'), 'worker not active'
+
+    page.click('#ssDemo')
+    page.wait_for_function('() => AstroApp.D() && AstroApp.D().layers.length > 3', timeout=60000)
+    wait_idle(page)
+    n0 = page.evaluate('AstroApp.D().layers.length')
+    print('auto layers:', n0, page.evaluate('AstroApp.D().layers.map(l=>l.op).join(",")'))
+    page.screenshot(path=f'{OUT}/1-auto.png')
+
+    # menus
+    page.click('.mtop >> nth=2')  # Afbeelding
+    page.wait_for_selector('.menu .mi')
+    page.hover('.menu .mi.sub >> nth=0')
+    page.wait_for_selector('.menu[data-depth="1"]')
+    page.screenshot(path=f'{OUT}/2-menu.png')
+    page.keyboard.press('Escape'); page.mouse.click(800, 500)
+
+    # add curves via shortcut, edit curve
+    page.keyboard.press('Control+m')
+    wait_idle(page)
+    assert page.evaluate('AstroApp.curLayer().op') == 'curves'
+    cv = page.locator('canvas.curvecanvas')
+    bb = cv.bounding_box()
+    page.mouse.move(bb['x'] + bb['width'] * 0.5, bb['y'] + bb['height'] * 0.5)
+    page.mouse.down(); page.mouse.move(bb['x'] + bb['width'] * 0.5, bb['y'] + bb['height'] * 0.35, steps=5); page.mouse.up()
+    wait_idle(page)
+    page.screenshot(path=f'{OUT}/3-curves.png')
+
+    # every op as layer
+    ops = page.evaluate("Object.keys(AstroOps.OPS).filter(k=>k!=='text')")
+    for op in ops:
+        page.evaluate(f"AstroApp.addLayer('{op}')")
+        wait_idle(page)
+        page.evaluate("AstroApp.deleteLayer()")
+    wait_idle(page)
+    print('ops ok:', len(ops))
+
+    # blend + mask
+    page.evaluate("AstroApp.addLayer('huesat', {sat: 1.8})"); wait_idle(page)
+    page.select_option('.lyr-top select', 'screen'); wait_idle(page)
+    page.evaluate("AstroApp.setMask(AstroApp.curLayer(), 'type', 'stars')"); wait_idle(page)
+    page.evaluate("AstroApp.toggleViewMask(AstroApp.curLayer())"); wait_idle(page)
+    page.screenshot(path=f'{OUT}/4-mask.png')
+    page.evaluate("AstroApp.toggleViewMask(AstroApp.curLayer())"); wait_idle(page)
+
+    # brush on mask
+    page.keyboard.press('b')
+    page.mouse.move(600, 400); page.mouse.down(); page.mouse.move(800, 450, steps=8); page.mouse.up()
+    wait_idle(page)
+    assert page.evaluate('AstroApp.curLayer().mask.strokes.length') == 1
+
+    # marquee selection -> new layer masked
+    page.keyboard.press('m')
+    page.mouse.move(500, 300); page.mouse.down(); page.mouse.move(900, 600, steps=6); page.mouse.up()
+    page.evaluate("AstroApp.addLayer('exposure', {exposure: 1})"); wait_idle(page)
+    assert page.evaluate('AstroApp.curLayer().mask.type') == 'shape'
+    page.screenshot(path=f'{OUT}/5-selection.png')
+    page.keyboard.press('Control+d')
+
+    # heal
+    page.keyboard.press('j')
+    page.mouse.move(400, 300); page.mouse.down(); page.mouse.move(700, 320, steps=6); page.mouse.up()
+    wait_idle(page)
+    assert page.evaluate("AstroApp.D().layers.some(l=>l.op==='heal')")
+
+    # text
+    page.keyboard.press('t'); page.mouse.click(450, 700); wait_idle(page)
+    assert page.evaluate("AstroApp.D().layers.some(l=>l.op==='text')")
+
+    # undo / redo
+    h = page.evaluate('AstroApp.D().hIndex')
+    page.keyboard.press('Control+z'); wait_idle(page)
+    assert page.evaluate('AstroApp.D().hIndex') == h - 1
+    page.keyboard.press('Control+Shift+z'); wait_idle(page)
+
+    # zoom 100% (region render)
+    page.keyboard.press('h')
+    page.keyboard.press('Control+1')
+    page.wait_for_timeout(300); wait_idle(page)
+    page.wait_for_function('() => AstroApp.S.region', timeout=60000)
+    page.screenshot(path=f'{OUT}/6-zoom100.png')
+    page.keyboard.press('Control+0'); wait_idle(page)
+
+    # actions
+    page.click('.ptab[data-panel="actions"]')
+    page.click('li[data-action="hoo"]'); wait_idle(page)
+    page.screenshot(path=f'{OUT}/7-hoo.png')
+    page.click('li[data-action="moon"]'); wait_idle(page)
+    page.click('li[data-action="auto"]'); wait_idle(page)
+
+    # geometry
+    page.evaluate("AstroApp.setGeom('rot', 1)"); wait_idle(page)
+    page.evaluate("AstroApp.setGeom('angle', 3)"); wait_idle(page)
+    page.keyboard.press('c'); page.keyboard.press('Enter'); wait_idle(page)
+    page.screenshot(path=f'{OUT}/8-geom.png')
+
+    # panels
+    for tab in ['hist', 'info', 'adj', 'history', 'nav']:
+        page.click(f'.ptab[data-panel="{tab}"]'); page.wait_for_timeout(100)
+    page.screenshot(path=f'{OUT}/9-panels.png')
+
+    # export
+    blob = page.evaluate("""async () => { const d = AstroApp.D(); const out = {};
+      for (const f of ['jpg','png','tif','fits']) { const b = await AstroApp.renderFull(d, {format: f, quality: .9, size: 'orig', compare: false, text: true}); out[f] = b.size; }
+      const c = await AstroApp.renderFull(d, {format: 'jpg', quality: .9, size: 'ig45', compare: true, text: true}); out.cmp = c.size; return out; }""")
+    print('export sizes:', blob)
+    assert all(v > 1000 for v in blob.values())
+
+    # dialogs
+    page.keyboard.press('Control+s'); page.wait_for_selector('#dlg[open]'); page.screenshot(path=f'{OUT}/10-export.png'); page.click('#dlg .df .btn >> nth=0')
+    page.keyboard.press('F1'); page.wait_for_selector('#dlg[open]'); page.click('#dlg .df .btn >> nth=0')
+
+    # english
+    page.evaluate("I18N.setLang('en')"); page.evaluate("AstroApp.setTool('hand')")
+    page.reload(); page.wait_for_selector('#menubar .mtop')
+    page.screenshot(path=f'{OUT}/11-en-start.png')
     b.close()
-log('ERRORS:', errors)
+
+bad = [e for e in errors if 'favicon' not in e]
+print('\n'.join(bad) if bad else 'no errors')
+print('UI OK' if not bad else 'UI ERRORS')
+sys.exit(1 if bad else 0)
