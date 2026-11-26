@@ -4,154 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AstroPolish</title>
-<meta name="description" content="Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi. Werkt volledig lokaal.">
+<meta name="description" content="Astrofoto-editor in Photoshop-stijl voor de Dwarf 3 en andere smart-telescopen. Werkt volledig lokaal.">
 <link rel="icon" href="img/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="lg" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#ffd27a"/><stop offset=".45" stop-color="#ff7a59"/><stop offset="1" stop-color="#6a4cff"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#lg)"/><path d="M32 12l3.2 12.8L48 28l-12.8 3.2L32 44l-3.2-12.8L16 28l12.8-3.2z" fill="#fff" opacity=".95"/><circle cx="47" cy="46" r="2.4" fill="#fff"/><circle cx="18" cy="45" r="1.6" fill="#fff" opacity=".8"/></svg>
-    <div>
-      <div class="brand-name">AstroPolish</div>
-      <div class="brand-sub" data-i18n="tagline">Astrofoto's mooi maken met één klik</div>
-    </div>
-  </div>
-  <div class="top-actions">
-    <div class="seg hidden" id="undoGroup">
-      <button id="btnUndo" title="Ongedaan maken (Ctrl+Z)" data-i18n-title="undo" disabled>↶</button>
-      <button id="btnRedo" title="Opnieuw (Ctrl+Y)" data-i18n-title="redo" disabled>↷</button>
-    </div>
-    <button class="ghost hidden" id="btnNew" data-i18n="newPhoto">Nieuwe foto</button>
-    <button class="ghost" id="btnStack" data-i18n="stack">Sessies combineren</button>
-    <button class="ghost hidden" id="btnBatch" data-i18n="batch">Meerdere foto's</button>
-    <div class="lang" role="group" aria-label="Language">
-      <button data-lang="nl">NL</button><button data-lang="en">EN</button>
-    </div>
-    <button class="icon-btn" id="btnHelp" aria-label="Help" title="Help">?</button>
-  </div>
-</header>
-
-<!-- ============================== welcome ============================== -->
-<main id="welcome" class="welcome">
-  <div class="sky" aria-hidden="true"></div>
-  <label class="drop" id="drop" for="fileInput">
-    <svg class="drop-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 31V9m0 0l-8 8m8-8l8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 30v6a4 4 0 004 4h24a4 4 0 004-4v-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-    <h1 data-i18n="dropTitle">Sleep je astrofoto hierheen</h1>
-    <p data-i18n="dropOr">of</p>
-    <span class="btn primary big" data-i18n="choose">Kies een foto</span>
-    <p class="formats" data-i18n="formats">JPG, PNG, TIFF en FITS · ook gestackte FITS van de Dwarf 3</p>
-  </label>
-  <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.fit,.fits,.fts,image/*" hidden>
-  <div class="welcome-links">
-    <button class="link" id="btnDemo" data-i18n="demo">Probeer het eerst met een voorbeeldfoto</button>
-    <span class="dot">·</span>
-    <button class="link" id="btnStack2" data-i18n="stackLink">Meerdere nachten combineren</button>
-  </div>
-  <ol class="steps">
-    <li><b>1</b><span data-i18n="step1">Foto kiezen</span></li>
-    <li><b>2</b><span data-i18n="step2">Stijl aanklikken</span></li>
-    <li><b>3</b><span data-i18n="step3">Opslaan</span></li>
-  </ol>
-  <p class="privacy" data-i18n="privacy">Je foto's blijven op je eigen computer. Er wordt niets geüpload.</p>
-</main>
-
-<!-- ============================== editor ============================== -->
-<main id="editor" class="editor hidden">
-  <section class="viewer">
-    <div class="stage" id="stage">
-      <canvas id="view"></canvas>
-      <div class="tag tag-before" id="tagBefore" data-i18n="before">Voor</div>
-      <div class="tag tag-after" id="tagAfter" data-i18n="after">Na</div>
-      <div class="busy hidden" id="busy"><span class="spinner"></span><span data-i18n="working">Bezig…</span></div>
-      <div class="probe" id="probe"></div>
-      <div class="hint" id="hint" data-i18n="hint">Sleep de lijn om voor en na te vergelijken · houd spatie ingedrukt voor het origineel</div>
-      <div class="toolbanner hidden" id="toolBanner"><span id="toolText"></span><span id="toolExtra"></span><button class="btn primary small" id="toolApply" data-i18n="apply">Toepassen</button><button class="ghost small" id="toolCancel" data-i18n="cancel">Annuleren</button></div>
-    </div>
-    <div class="toolbar">
-      <div class="seg" role="group">
-        <button data-view="after" data-i18n="after">Na</button>
-        <button data-view="split" class="on" data-i18n="compare">Voor / na</button>
-        <button data-view="before" data-i18n="before">Voor</button>
-        <button data-view="snap" id="btnViewSnap" class="hidden" data-i18n="vsSnap">Momentopname</button>
+<div id="app">
+  <header id="menubar" class="menubar"></header>
+  <div id="optionsbar" class="optionsbar"></div>
+  <div class="workspace">
+    <nav id="toolbar" class="toolbar"></nav>
+    <section class="docarea">
+      <div id="doctabs" class="doctabs"></div>
+      <div id="stage" class="stage">
+        <canvas id="view"></canvas>
+        <div id="startscreen" class="startscreen"></div>
+        <div id="busy" class="busy hidden"><span class="spinner"></span><span id="busyText"></span></div>
       </div>
-      <div class="seg" role="group">
-        <button data-zoom="fit" class="on" data-i18n="fit">Passend</button>
-        <button data-zoom="1">100%</button>
-        <button data-zoom="2">200%</button>
-      </div>
-      <div class="seg" role="group">
-        <button id="btnCrop" title="Bijsnijden" data-i18n-title="cropTool">✂</button>
-        <button id="btnPickWB" title="Witbalans: klik op een witte ster of grijs gebied" data-i18n-title="pickWB">💧</button>
-        <button id="btnSnap" title="Momentopname maken om te vergelijken" data-i18n-title="snapshot">📸</button>
-      </div>
-      <select id="viewMode" class="small-select" title="Weergave">
-        <option value="normal" data-i18n="vmNormal">Normale weergave</option>
-        <option value="stars" data-i18n="vmStars">Sterrenmasker</option>
-        <option value="starless" data-i18n="vmStarless">Zonder sterren</option>
-        <option value="gradient" data-i18n="vmGradient">Gevonden lichtvervuiling</option>
-        <option value="clip" data-i18n="vmClip">Over-/onderbelichting</option>
-      </select>
-      <div class="fileinfo" id="fileInfo"></div>
-    </div>
-  </section>
-
-  <aside class="panel">
-    <nav class="tabs" id="tabs"></nav>
-    <div class="tabbody" id="tabBody"></div>
-    <div class="savebar">
-      <div class="saverow">
-        <select id="format" title="Bestandstype">
-          <option value="jpg">JPG</option>
-          <option value="png">PNG</option>
-          <option value="webp">WebP</option>
-          <option value="tif">TIFF 16-bit</option>
-          <option value="fits">FITS 32-bit</option>
-        </select>
-        <select id="exportSize" title="Formaat"></select>
-      </div>
-      <button class="btn primary big wide" id="btnSave" data-i18n="saveBtn">Foto opslaan</button>
-    </div>
-  </aside>
-</main>
-
-<!-- ============================== batch ============================== -->
-<dialog id="batchDlg" class="dlg">
-  <h2 data-i18n="batchTitle">Meerdere foto's tegelijk</h2>
-  <p data-i18n="batchText">Alle foto's krijgen de stijl en instellingen die je nu gebruikt. Met de stijl "Automatisch" kiest de app per foto zelf de beste stijl.</p>
-  <label class="btn ghost" for="batchInput" data-i18n="batchPick">Foto's kiezen</label>
-  <input type="file" id="batchInput" multiple accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.fit,.fits,.fts,image/*" hidden>
-  <ul id="batchList" class="batchlist"></ul>
-  <div class="dlg-actions">
-    <button class="ghost" id="batchClose" data-i18n="close">Sluiten</button>
-    <button class="btn primary" id="batchStart" disabled data-i18n="batchStart">Start</button>
+      <footer id="statusbar" class="statusbar"></footer>
+    </section>
+    <aside id="dock" class="dock"></aside>
   </div>
-</dialog>
-
-<!-- ============================== stacking ============================== -->
-<dialog id="stackDlg" class="dlg">
-  <h2 data-i18n="stackTitle">Sessies combineren</h2>
-  <p data-i18n="stackText">Heb je hetzelfde object op meerdere avonden gefotografeerd? Kies de gestackte bestanden (bijvoorbeeld de FITS van elke sessie). AstroPolish lijnt ze uit op de sterren (verschuiving en rotatie) en middelt ze tot één foto met minder ruis.</p>
-  <label class="btn ghost" for="stackInput" data-i18n="batchPick">Foto's kiezen</label>
-  <input type="file" id="stackInput" multiple accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.fit,.fits,.fts,image/*" hidden>
-  <ul id="stackList" class="batchlist"></ul>
-  <div class="dlg-actions">
-    <button class="ghost" id="stackClose" data-i18n="close">Sluiten</button>
-    <button class="btn primary" id="stackStart" disabled data-i18n="stackStart">Combineren</button>
-  </div>
-</dialog>
-
-<!-- ============================== help ============================== -->
-<dialog id="helpDlg" class="dlg wide">
-  <div id="helpBody"></div>
-  <div class="dlg-actions"><button class="btn primary" id="helpClose" data-i18n="close">Sluiten</button></div>
-</dialog>
-
-<input type="file" id="importInput" accept=".json,application/json" hidden>
+</div>
+<div id="menuLayer"></div>
+<dialog id="dlg" class="dlg"><div id="dlgBody"></div></dialog>
+<input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.fit,.fits,.fts,image/*" hidden>
+<input type="file" id="jsonInput" accept=".json,application/json" hidden>
 <div class="overlay hidden" id="overlay"><div class="overlay-box"><span class="spinner big"></span><p id="overlayText"></p></div></div>
 <div class="toast" id="toast"></div>
 
 <script src="js/engine.js"></script>
+<script src="js/ops.js"></script>
 <script src="js/formats.js"></script>
 <script src="js/stack.js"></script>
 <script src="js/core.js"></script>

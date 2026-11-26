@@ -24,6 +24,8 @@ jobs:
           H: '540'
       - name: Stacking test
         run: node test/stack-test.js
+      - name: Layer engine test
+        run: node test/ops-test.js
 
   windows:
     needs: test

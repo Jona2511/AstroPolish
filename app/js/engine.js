@@ -1664,7 +1664,17 @@
     return img;
   }
 
+  // internals for the layer engine (ops.js)
+  const internals = {
+    clamp01, smooth, lum, medMad, percentile, boxBlur, gauss, minMaxFilter, opening, guided, atrous, mtf, applyLumRatio,
+    curveLUT, lutGet, isIdentityCurve, removeHotPixels, fitGradient, fitGrid, applyGradient, evalModel, vignetteCorrect,
+    measureColour, measurePick, applyColour, deconvolve, measureStretch, applyStretch, buildLUT, ghsFunc, highlightProtect,
+    applyPalette, denoise, waveletDenoise, noiseSigma, signalMask, backgroundSmooth, starMaskOf, separateStars, processStarLayer,
+    screenCombine, starReduce, localContrast, sharpen, waveletSharpen, curves, userCurves, levels, saturate, hslAdjust,
+    colourBalance, scnr, drawSpikes, glow, vignetteEffect, finalTone, clampAll, geomOf, sampleBilinear,
+  };
   const api = {
+    _: internals,
     DEFAULTS, PRESETS, HUES, process, presetParams, autoPreset, guessFromText, analyze, detectStars,
     detectAutoCrop, cropImage, rotate90, rotateArbitrary, bin2, flipH, flipV: flipVert, downscale, resize, pad, cloneImage, newImage,
     toRGBA, fromRGBA, toRGB16, histogram, makeDemo, medMad, percentile, lum, gauss, curveLUT, sampleBilinear,
