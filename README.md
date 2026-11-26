@@ -1,5 +1,222 @@
 # ✨ AstroPolish
 
+**English** · [Nederlands](#nederlands)
+
+**Astrophoto editor for the Dwarf 3 (and other smart telescopes), laid out like Adobe Photoshop: menu bar, tools, options bar, document tabs and panels, with non-destructive adjustment layers.**
+Drop in a photo and you immediately get a complete automatic edit, built from layers you can still adjust, hide, mask and blend.
+
+**Two modes** (switch at the top right):
+- **Simple** (default for new users): three steps. Open a photo, choose a style, optionally move a few plain-language sliders (brightness, contrast, colour, cool/warm, light pollution, noise, smaller stars, sharpness) and save. No layers or tools in sight.
+- **Expert**: the full Photoshop-style workspace described below. Every layer comes with a short explanation of what it does.
+
+![AstroPolish](docs/screenshot.png)
+
+**Who is it for?** Owners of smart telescopes (Dwarf 3, Seestar, Vespera…) who want a beautiful photo without learning PixInsight or Siril, and more advanced users who want layers, masks and astro-specific processing. AstroPolish edits **stacked** images; calibrating and stacking individual lights, darks and flats is done in your telescope app or in Siril.
+
+## Download
+
+| | |
+|---|---|
+| 🪟 **Windows** | Go to [Releases](../../releases/latest) and download `AstroPolish-…-portable.exe` (just run it, nothing to install) or `AstroPolish-…-setup.exe` (installer with a desktop shortcut). |
+| 🍎 **Mac** | Go to [Releases](../../releases/latest) and download `AstroPolish-…-mac.dmg` (Apple Silicon and Intel, macOS 12 or newer). Open it and drag AstroPolish to *Applications*. |
+
+> The app is not code-signed (yet). **Windows:** SmartScreen may warn you; choose *More info* → *Run anyway*. **Mac:** macOS blocks the first launch; go to *System Settings → Privacy & Security* and choose *Open Anyway*. If macOS says the app is "damaged", run `xattr -cr /Applications/AstroPolish.app` in Terminal.
+
+## Features
+
+**Photoshop-style workspace.**
+- Menu bar (File, Edit, Image, Layer, Select, Filter, Astro, View, Window, Help) with the familiar Photoshop shortcuts (Ctrl+L, Ctrl+M, Ctrl+U, Ctrl+B, Ctrl+J, Ctrl+Z…; Cmd on a Mac).
+- Toolbar: move, hand, zoom, rectangular and elliptical marquee, crop, eyedropper, star info (FWHM), ruler/straighten, brush and eraser for layer masks, healing brush (satellite trails) and text.
+- Options bar per tool, multiple documents in tabs, status bar with pixel values.
+- Panels: Navigator, Histogram, Info, Properties, Adjustments, Layers, History (with snapshots) and Actions. Show or hide panels via *Window*.
+
+**Layers.**
+- 53 operations as adjustment layers; every layer has opacity, 13 blend modes (screen, overlay, soft light, color, luminosity…) and a mask.
+- Masks by luminance range, colour range, stars only, everything except stars, object, background or selection, plus painting with brush/eraser, feather, density and invert. Alt+click shows the mask.
+- Drag, duplicate, rename and hide layers. The original is never changed.
+- Save projects as .json and open them again later.
+
+**Actions: 19 one-click styles.**
+- *Deep sky*: Automatic, Nebula, Galaxy, Star cluster, Milky Way/wide field, Maximum brightness, Natural, Starless, Star spikes, Dreamy and Black & white.
+- *Dual-band filter*: HOO, Foraxx and Hubble style.
+- *Solar system*: Moon, Colourful moon, Sun, Orange sun (H-alpha look) and Planet.
+- Record, export and import **your own actions**. Batch processing with any action.
+
+**Photoshop adjustments.**
+- Brightness/contrast, levels, curves (per channel), exposure, vibrance, hue/saturation, HSL per colour, colour balance, white balance, photo filter, black & white, channel mixer, invert, posterize, threshold, gradient map, shadows/highlights and auto tone/contrast/colour.
+- Filters: Gaussian blur, median, surface blur, minimum, maximum, unsharp mask, high pass, clarity, dehaze, CLAHE, emboss, find edges, grain, glow, vignette, dust & scratches.
+
+**Automatic detection and analysis.**
+- Recognises the object from the FITS header or file name (all 110 Messier objects and many well-known names), and the Moon or Sun from the image itself.
+- Info panel with stacking borders, light pollution, green cast, noise level, star count and sharpness (FWHM), plus the full FITS header.
+
+**Light.**
+- Stretching with seven methods: Automatic (STF), statistical, arcsinh, GHS (Generalized Hyperbolic Stretch), logarithmic, levels and manual.
+- HDR multiscale transform.
+- Brightness, black point, colour preservation and HDR protection of bright cores.
+- Contrast, levels (black/gamma/white) and a per-channel **curves editor**.
+
+**Colour.**
+- Background neutralisation and colour calibration on the stars.
+- **Eyedropper** for white balance (white star) and for the background. Temperature and tint.
+- **Dual-band palettes**: HOO, soft HOO, Foraxx, Hubble-like (SHO style), Ha only and OIII only, plus OIII boost.
+- Saturation, vibrance and SCNR (green removal).
+- **HSL per hue** (8 colours) and **colour balance** for shadows, midtones and highlights.
+- Black & white, invert and colourise.
+
+**Detail.**
+- Noise reduction: edge-preserving, wavelets, median or bilateral. Separate colour noise control, and a smoother background.
+- Local contrast, sharpening, **deconvolution** (Richardson-Lucy) and **6 wavelet layers like RegiStax**.
+
+**Stars.**
+- Make stars smaller, dimmer or remove them entirely (**starless version**).
+- Separate star colour, smaller halos and removal of blue or purple fringes.
+- Edit nebula and stars separately.
+- **Star spikes** with 4, 6 (JWST style) or 8 rays.
+
+**Effects.**
+- Soft glow and vignette.
+- **Text or watermark** with object, date, exposure and telescope filled in automatically.
+
+**Image.**
+- **Crop** with aspect ratios, straighten by any angle, rotate and flip.
+- 2×2 binning and automatic removal of stacking borders.
+- Hot pixel removal.
+- Light pollution removal with a smooth (polynomial) or complex (grid) model, subtract or divide, plus vignetting correction.
+
+**Info.**
+- Histogram (also logarithmic), statistics and noise.
+- Stars and FWHM.
+- All FITS metadata.
+
+**View and compare.**
+- Before/after slider and **snapshots** to compare versions.
+- Zoom to 100% and 200%, computed at full resolution.
+- Special views: star mask, starless, detected light pollution and clipping.
+- Pixel values under the cursor.
+- **Undo and redo** (Ctrl+Z / Ctrl+Y).
+
+**Combine sessions.**
+- Stack several nights of the same object.
+- Automatic alignment on the stars (shift and rotation) and normalisation.
+
+**Several photos at once** in tabs, and batch processing.
+
+**Save.**
+- As JPG, PNG, WebP, 16-bit TIFF or 32-bit FITS.
+- Sizes: original, 4K, 2048 or 1080 px, Instagram 4:5 and 1:1, desktop 16:9, phone wallpaper, 2× upscale, or a side-by-side before/after image.
+- **Save and load settings** as a file.
+
+**Open.**
+- JPG, PNG and WebP.
+- TIFF in 8, 16 or 32 bit: uncompressed, LZW, Deflate or PackBits.
+- FITS in 8, 16 or 32 bit and float: RGB, or Bayer/RAW with debayering.
+
+**General.**
+- English and Dutch. Runs completely locally: nothing is uploaded.
+
+> Star removal and noise reduction work without AI models, so the app stays small and offline. On demanding data, StarNet, GraXpert or the RC-Astro tools are still stronger.
+
+## Supported file formats
+
+| Format | Open | Save | Notes |
+|---|---|---|---|
+| FITS | 8, 16 (signed and unsigned with BZERO), 32-bit integer, 32/64-bit float; mono, RGB (3 planes) and Bayer (RGGB/BGGR/GRBG/GBRG) | 32-bit float RGB | Also an image in an IMAGE extension. NaN/Inf become 0. Not supported: compressed FITS (fpack), tables, data cubes with more than 3 planes. |
+| TIFF | 8/16-bit unsigned, 32-bit float; mono, RGB, RGBA; uncompressed, LZW, Deflate (with predictor), PackBits; strips, planar, big- and little-endian | 16-bit RGB (uncompressed) | Not supported: tiled, BigTIFF, palette, signed integers, float predictor. |
+| JPG, PNG, WebP | yes (8-bit, EXIF orientation) | yes | Colour profiles are converted to sRGB. Exports contain no ICC profile and are sRGB. |
+| RAW (CR2, NEF, ARW…), HEIC, AVI/SER | no | no | Rejected with a clear message. |
+| Project (`.astropolish.json`) | yes | yes | Contains layers, masks and geometry, **not the photo itself**: keep it next to the original file. |
+
+Maximum image size: 250 megapixels. A 24 Mpx export with the automatic edit uses about 1.8 GB of memory (see *Performance*).
+
+## Feature status
+
+**Stable (covered by automated tests):** opening and saving the formats above, stretching (STF, statistical, arcsinh, GHS, log, levels, manual), light pollution/gradient removal, colour calibration, noise reduction (4 methods), layers with opacity, 13 blend modes and masks, curves, HSL, levels and the other adjustments, undo/redo, saving and loading projects, export in all formats and sizes.
+
+**Experimental (works, but little tested on real data yet):**
+- *Combine sessions*: shift + rotation (+ scale) only, plain average without outlier rejection, needs enough stars.
+- *Star removal / editing*: morphological, no AI. Large or saturated stars on a bright nebula leave traces; StarNet or StarXTerminator are stronger.
+- *Deconvolution*: Richardson-Lucy with a Gaussian PSF and a protected background; slightly amplifies noise around stars.
+- *Debayering*: bilinear; row order follows ROWORDER/BAYERPAT from the header, but has not been checked with every camera.
+- *Healing brush*, *CLAHE* and *HDR multiscale*.
+
+**Known limitations**
+- The preview is computed on a downscaled copy (1200 px by default). The full-resolution export differs by about 1% on average (tested: < 2% per preset), because noise at full resolution reacts differently to non-linear steps. At 100% zoom the visible region is computed at full resolution.
+- CLAHE computes its tiles per image, so at 100% zoom (a crop) it can look slightly different locally than in the export.
+- Mono images use three channels internally (3× memory).
+- Error messages from the file readers are in Dutch only.
+- The Windows and Mac apps are not code-signed and the Mac app is not notarised by Apple (warning on first launch).
+- There is no full colour management pipeline (no ICC profiles in exports, everything is sRGB).
+
+## Performance
+
+Measured on a Linux server (one CPU core in the worker, Node 22), automatic edit with 12 layers:
+
+| Size | Preview | Full-resolution export | Peak memory |
+|---|---|---|---|
+| 1920 × 1080 | 1.5 s | 2.9 s | 0.4 GB |
+| 3840 × 2160 (Dwarf 3) | 1.4 s | 11.3 s | 0.9 GB |
+| 6000 × 4000 (24 Mpx) | 1.6 s | 37.7 s | 1.7 GB |
+
+Changing one layer only recomputes that layer and the layers above it (cache). All heavy computation runs in a background worker, so the interface stays responsive.
+
+## Reporting bugs and questions
+
+Open an [issue](../../issues/new/choose). Include the version (*Help → About AstroPolish*), what you did, what you expected and what happened. For an error message: click **Copy details** in the error window and paste that text into the issue. If you can share the file (for example via a download link), that helps a lot. Security problems: see [SECURITY.md](SECURITY.md).
+
+## Contributing
+
+Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). In short: no new runtime dependencies, every change to image processing comes with a test that shows the result is correct, and `npm test` must pass.
+
+## Tips for the Dwarf 3
+
+- Use the stacked **FITS** file when you can. It contains far more information than the JPG.
+- **Dual-band filter**: try the HOO, Foraxx or Hubble styles.
+- The same object on **several nights**? Use *Combine sessions*.
+- A FITS that comes in upside down can be turned via *Image* → *Image rotation* → *180°*.
+- Satellite trail? Take the healing brush (J) and paint over it.
+
+## Building it yourself
+
+```bash
+npm install
+npm start          # start the app
+npm test           # all Node tests (lint, formats, algorithms, projects, security, layers, stacking)
+npm run test:ui    # interface test in Chrome (python3 + playwright, server on port 8765: see test/README.md)
+npm run dist       # build the Windows .exe (in dist/)
+npm run dist:mac   # build the Mac .dmg (on a Mac, in dist/)
+```
+
+The web version lives in the `app/` folder and needs no build step. Start for example `python -m http.server` in that folder.
+
+Every push and pull request runs all tests in GitHub Actions and builds the Windows and Mac apps. Only a push to `main` with a **new** version number in `package.json` creates a release; an existing release is never overwritten.
+
+## Project structure
+
+```
+app/              web app (HTML/CSS/JS, no dependencies)
+  js/engine.js    image processing: gradient, colour, stretch, noise, stars, wavelets, spikes…
+  js/stack.js     aligning (triangle matching + RANSAC) and combining sessions
+  js/ops.js       layers, masks, blend modes, cache and project validation
+  js/formats.js   FITS and TIFF readers, TIFF16 and FITS writers
+  js/core.js      commands for the background worker
+  js/worker.js    computes in the background so the interface stays smooth
+  js/app.js       interface
+electron/         desktop app (main.js) and security rules (security.js)
+test/             tests; test/fixtures holds small FITS/TIFF test files (see test/README.md)
+```
+
+## Licence
+
+MIT, see [LICENSE](LICENSE). The app itself has no runtime dependencies. Building the desktop apps uses Electron (MIT) and electron-builder (MIT).
+
+---
+
+
+# Nederlands
+
+[English](#-astropolish) · **Nederlands**
+
 **Astrofoto-editor voor de Dwarf 3 (en andere smart-telescopen), opgezet zoals Adobe Photoshop: menubalk, gereedschappen, optiebalk, documenttabs en panelen, met niet-destructieve aanpassingslagen.**
 Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebouwd uit lagen die je allemaal nog kunt aanpassen, verbergen, maskeren en mengen.
 
@@ -182,11 +399,12 @@ npm start        # app starten
 npm test         # alle Node-tests (lint, formaten, algoritmes, projecten, beveiliging, lagen, stacken)
 npm run test:ui  # interfacetest in Chrome (python3 + playwright, server op poort 8765: zie test/README.md)
 npm run dist     # Windows .exe bouwen (in dist/)
+npm run dist:mac # Mac .dmg bouwen (op een Mac, in dist/)
 ```
 
 De web-versie staat in de map `app/` en heeft geen build-stap nodig. Start bijvoorbeeld `python -m http.server` in die map.
 
-Elke push en pull request draait alle tests in GitHub Actions en bouwt de Windows-app. Alleen een push naar `main` met een **nieuw** versienummer in `package.json` maakt een release; een bestaande release wordt nooit overschreven.
+Elke push en pull request draait alle tests in GitHub Actions en bouwt de Windows- en Mac-app. Alleen een push naar `main` met een **nieuw** versienummer in `package.json` maakt een release; een bestaande release wordt nooit overschreven.
 
 ## Projectstructuur
 
@@ -199,16 +417,10 @@ app/              web-app (HTML/CSS/JS, geen dependencies)
   js/core.js      opdrachten voor het achtergrondproces
   js/worker.js    rekent op de achtergrond, zodat de interface soepel blijft
   js/app.js       interface
-electron/         Windows-app (main.js) en beveiligingsregels (security.js)
+electron/         desktop-app (main.js) en beveiligingsregels (security.js)
 test/             tests; test/fixtures bevat kleine FITS/TIFF-testbestanden (zie test/README.md)
 ```
 
----
-
 ## Licentie
 
-MIT, zie [LICENSE](LICENSE). De app zelf heeft geen runtime-dependencies. Voor het bouwen van de Windows-app worden Electron (MIT) en electron-builder (MIT) gebruikt.
-
----
-
-*English:* AstroPolish is a free, open-source astrophoto editor for smart telescopes (Dwarf 3, Seestar, Vespera…) with a Photoshop-style workspace and non-destructive adjustment layers (masks, 13 blend modes, 53 operations). It offers one-click styles plus GHS/arcsinh stretching, gradient removal, colour calibration, HOO/Foraxx palettes, curves, HSL, deconvolution, wavelets, star reduction/removal, star spikes, multi-night stacking, batch processing and many export sizes. Everything runs locally. MIT licence.
+MIT, zie [LICENSE](LICENSE). De app zelf heeft geen runtime-dependencies. Voor het bouwen van de desktop-apps worden Electron (MIT) en electron-builder (MIT) gebruikt.
