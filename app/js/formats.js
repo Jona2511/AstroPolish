@@ -11,75 +11,141 @@
     return { w, h, r: new Float32Array(n), g: new Float32Array(n), b: new Float32Array(n), mono: false, meta: {} };
   }
 
+  // Shared limits and helpers ------------------------------------------------
+  // Largest image we try to open: 3 float channels of 250 Mpx is already 3 GB.
+  const MAX_PIXELS = 250e6;
+  function checkSize(kind, w, h) {
+    if (!(w > 0 && h > 0) || !Number.isInteger(w) || !Number.isInteger(h)) throw new Error(`${kind}: ongeldige afmetingen (${w} x ${h})`);
+    if (w * h > MAX_PIXELS) throw new Error(`${kind}: afbeelding is te groot (${w} x ${h} = ${Math.round(w * h / 1e6)} Mpx, maximaal ${MAX_PIXELS / 1e6} Mpx)`);
+  }
+  const damaged = (kind, detail) => new Error(`${kind}-bestand is onvolledig of beschadigd${detail ? ' (' + detail + ')' : ''}`);
+
+  // Normalise floating point data to 0..1 without clipping the faint end:
+  // - NaN / ±Inf are "no data" and become 0 (they are excluded from the statistics);
+  // - negative values (bias-subtracted data) are kept by shifting the black point,
+  //   using a robust low percentile so a single extreme outlier cannot squash the range;
+  // - the white point is 1.0 for 0..1 data, the maximum for data slightly above 1
+  //   (calibration overshoot), 65535 for ADU-scaled data, otherwise the maximum.
+  function normaliseFloat(chans) {
+    let mn = Infinity, mx = -Infinity;
+    for (const a of chans) for (let i = 0; i < a.length; i++) { const v = a[i]; if (v === v && v !== Infinity && v !== -Infinity) { if (v < mn) mn = v; if (v > mx) mx = v; } }
+    if (mn === Infinity) { for (const a of chans) a.fill(0); return { lo: 0, hi: 1 }; }
+    let lo = 0;
+    if (mn < 0) {
+      // 0.01 % percentile of the (sub-sampled) finite values
+      const n = chans[0].length, step = Math.max(1, Math.floor(n / 200000)), smp = [];
+      for (const a of chans) for (let i = 0; i < n; i += step) { const v = a[i]; if (Number.isFinite(v)) smp.push(v); }
+      smp.sort((a, b) => a - b);
+      lo = Math.min(0, smp[Math.floor(smp.length * 1e-4)]);
+    }
+    let hi;
+    if (mx <= 1) hi = 1;
+    else if (mx <= 2) hi = mx;
+    else if (mx <= 65535 * 1.0001) hi = 65535;
+    else hi = mx;
+    const sc = 1 / Math.max(1e-30, hi - lo);
+    for (const a of chans) for (let i = 0; i < a.length; i++) {
+      const x = a[i];
+      if (!Number.isFinite(x)) { a[i] = 0; continue; } // no data
+      const v = (x - lo) * sc;
+      a[i] = v > 0 ? (v < 1 ? v : 1) : 0;
+    }
+    return { lo, hi };
+  }
+
   // ---------------------------------------------------------------- FITS ---
-  function readFITS(buffer) {
-    const bytes = new Uint8Array(buffer);
-    const dv = new DataView(buffer);
+  function parseFITSHeader(bytes, pos) {
     const hdr = {};
-    let pos = 0, done = false;
+    let done = false;
     while (!done && pos + 2880 <= bytes.length) {
       for (let c = 0; c < 36; c++) {
         let card = '';
         for (let k = 0; k < 80; k++) card += String.fromCharCode(bytes[pos + c * 80 + k]);
         const key = card.substring(0, 8).trim();
         if (key === 'END') { done = true; break; }
-        if (card[8] === '=') {
-          let v = card.substring(10);
+        if (card[8] === '=' && card[9] === ' ' || card[8] === '=') {
+          const t = card.substring(10).trim();
           let val;
-          const t = v.trim();
           if (t.startsWith("'")) {
-            const end = t.indexOf("'", 1);
-            val = t.substring(1, end < 0 ? t.length : end).trim();
+            // string value: '' is an escaped quote
+            let s = '', i = 1;
+            for (; i < t.length; i++) {
+              if (t[i] === "'") { if (t[i + 1] === "'") { s += "'"; i++; } else break; } else s += t[i];
+            }
+            val = s.replace(/\s+$/, '');
           } else {
-            const s = t.split('/')[0].trim();
-            if (s === 'T') val = true; else if (s === 'F') val = false;
-            else val = isNaN(parseFloat(s)) ? s : parseFloat(s);
+            const v = t.split('/')[0].trim();
+            if (v === 'T') val = true; else if (v === 'F') val = false;
+            else { const f = Number(v.replace(/D/i, 'E')); val = v !== '' && Number.isFinite(f) ? f : v; }
           }
-          hdr[key] = val;
+          if (!(key in hdr)) hdr[key] = val;
         }
       }
       pos += 2880;
     }
-    if (!done) throw new Error('FITS: header niet gevonden');
-    const bitpix = hdr.BITPIX, naxis = hdr.NAXIS;
-    const w = hdr.NAXIS1, h = hdr.NAXIS2, planes = naxis >= 3 ? (hdr.NAXIS3 || 1) : 1;
-    if (!w || !h) throw new Error('FITS: geen afbeelding in bestand');
-    const bzero = hdr.BZERO || 0, bscale = hdr.BSCALE === undefined ? 1 : hdr.BSCALE;
+    if (!done) return null;
+    return { hdr, dataStart: pos };
+  }
+
+  function readFITS(buffer) {
+    if (!buffer || buffer.byteLength < 2880) throw new Error('FITS: geen geldig FITS-bestand (te klein)');
+    const bytes = new Uint8Array(buffer);
+    const dv = new DataView(buffer);
+    const magic = String.fromCharCode(...bytes.subarray(0, 6));
+    if (magic !== 'SIMPLE') throw new Error('FITS: geen geldig FITS-bestand (SIMPLE ontbreekt)');
+    // walk the HDUs: use the primary image, or the first IMAGE extension when the primary has no data
+    let pos = 0, hdr = null, dataStart = 0;
+    for (let hdu = 0; hdu < 16 && pos < bytes.length; hdu++) {
+      const parsed = parseFITSHeader(bytes, pos);
+      if (!parsed) { if (hdu === 0) throw new Error('FITS: header niet gevonden of beschadigd (END ontbreekt)'); break; }
+      const h = parsed.hdr;
+      const naxis = h.NAXIS | 0;
+      let n = naxis > 0 ? 1 : 0;
+      for (let i = 1; i <= naxis; i++) n *= (h['NAXIS' + i] | 0);
+      const dataBytes = (Math.abs(h.BITPIX | 0) / 8) * (h.GCOUNT || 1) * ((h.PCOUNT | 0) + n);
+      if (hdu > 0 && h.XTENSION === 'BINTABLE' && h.ZIMAGE === true) throw new Error('FITS: gecomprimeerde FITS (fpack/tile compression) wordt niet ondersteund. Pak het bestand eerst uit (funpack).');
+      if (naxis >= 2 && (hdu === 0 || h.XTENSION === 'IMAGE')) { hdr = h; dataStart = parsed.dataStart; break; }
+      pos = parsed.dataStart + Math.ceil(dataBytes / 2880) * 2880;
+    }
+    if (!hdr) throw new Error('FITS: geen afbeelding in bestand');
+    pos = dataStart;
+    const bitpix = hdr.BITPIX;
+    const w = hdr.NAXIS1, h = hdr.NAXIS2, planes = hdr.NAXIS >= 3 ? (hdr.NAXIS3 || 1) : 1;
+    checkSize('FITS', w, h);
+    if (![8, 16, 32, -32, -64].includes(bitpix)) throw new Error('FITS: BITPIX ' + bitpix + ' wordt niet ondersteund');
+    const bzero = Number(hdr.BZERO) || 0, bscale = hdr.BSCALE === undefined ? 1 : Number(hdr.BSCALE);
     const bpp = Math.abs(bitpix) / 8;
-    const n = w * h;
-    const read = (i) => {
-      const o = pos + i * bpp;
-      switch (bitpix) {
-        case 8: return bytes[o];
-        case 16: return dv.getInt16(o, false);
-        case 32: return dv.getInt32(o, false);
-        case -32: return dv.getFloat32(o, false);
-        case -64: return dv.getFloat64(o, false);
-        default: throw new Error('FITS: BITPIX ' + bitpix + ' niet ondersteund');
-      }
-    };
+    const n = w * h, use = Math.min(planes, 3);
+    const need = pos + n * use * bpp;
+    if (need > bytes.length) throw damaged('FITS', `${bytes.length} van de ${need} bytes aanwezig`);
+    const read = {
+      8: (o) => bytes[o], 16: (o) => dv.getInt16(o, false), 32: (o) => dv.getInt32(o, false),
+      [-32]: (o) => dv.getFloat32(o, false), [-64]: (o) => dv.getFloat64(o, false),
+    }[bitpix];
     const raw = [];
-    let mn = Infinity, mx = -Infinity;
-    for (let p = 0; p < Math.min(planes, 3); p++) {
+    let mn = Infinity;
+    const blank = bitpix > 0 && hdr.BLANK !== undefined ? hdr.BLANK : null;
+    for (let p = 0; p < use; p++) {
       const a = new Float32Array(n);
       for (let i = 0; i < n; i++) {
-        let v = read(p * n + i) * bscale + bzero;
-        if (!isFinite(v)) v = 0;
+        const s = read(pos + (p * n + i) * bpp);
+        const v = blank !== null && s === blank ? NaN : s * bscale + bzero;
         a[i] = v;
         if (v < mn) mn = v;
-        if (v > mx) mx = v;
       }
       raw.push(a);
     }
-    // normalise to 0..1
-    let lo = 0, hi;
-    if (bitpix === 8) hi = 255;
-    else if (bitpix === 16) hi = (bzero === 32768 || mn >= 0) ? 65535 : 32767;
-    else if (bitpix === 32) hi = mx > 0 ? mx : 1;
-    else hi = mx <= 1.0 ? 1.0 : (mx <= 65535 ? 65535 : mx);
-    if (mn < 0) lo = mn;
-    const sc = 1 / (hi - lo || 1);
-    for (const a of raw) for (let i = 0; i < n; i++) a[i] = Math.min(1, Math.max(0, (a[i] - lo) * sc));
+    if (bitpix < 0) normaliseFloat(raw);
+    else {
+      // integer data: map the physical range of the data type to 0..1
+      let lo = 0, hi;
+      if (bitpix === 8) hi = 255 * bscale + bzero;
+      else if (bitpix === 16) hi = bzero === 32768 ? 65535 : 32767;
+      else { hi = -Infinity; for (const a of raw) for (let i = 0; i < n; i++) if (a[i] > hi) hi = a[i]; if (!(hi > 0)) hi = 1; }
+      if (mn < 0) lo = mn;
+      const sc = 1 / (hi - lo || 1);
+      for (const a of raw) for (let i = 0; i < n; i++) { const v = (a[i] - lo) * sc; a[i] = v > 0 ? (v < 1 ? v : 1) : 0; }
+    }
 
     const topDown = String(hdr.ROWORDER || '').toUpperCase() === 'TOP-DOWN';
     let img;
@@ -88,9 +154,8 @@
     } else {
       const bayer = String(hdr.BAYERPAT || hdr.COLORTYP || '').toUpperCase().replace(/[^RGB]/g, '');
       if (bayer.length === 4) {
-        let pat = bayer;
-        // FITS is bottom-up: when we flip rows, the bayer phase shifts vertically if height is odd
-        img = debayer(raw[0], w, h, pat, (hdr.XBAYROFF || 0) | 0, (hdr.YBAYROFF || 0) | 0);
+        // the pattern refers to the pixel order as stored in the file, so debayer before flipping
+        img = debayer(raw[0], w, h, bayer, (hdr.XBAYROFF || 0) | 0, (hdr.YBAYROFF || 0) | 0);
       } else {
         img = { w, h, r: raw[0], g: new Float32Array(raw[0]), b: new Float32Array(raw[0]), mono: true, meta: {} };
       }
@@ -141,6 +206,7 @@
 
   // ---------------------------------------------------------------- TIFF ---
   async function readTIFF(buffer) {
+    if (!buffer || buffer.byteLength < 16) throw new Error('TIFF: geen geldig TIFF-bestand (te klein)');
     const dv = new DataView(buffer);
     const bo = String.fromCharCode(dv.getUint8(0), dv.getUint8(1));
     if (bo !== 'II' && bo !== 'MM') throw new Error('TIFF: ongeldig bestand');
@@ -148,7 +214,9 @@
     const u16 = (o) => dv.getUint16(o, le), u32 = (o) => dv.getUint32(o, le);
     if (u16(2) !== 42) throw new Error('TIFF: BigTIFF wordt niet ondersteund');
     const ifd = u32(4);
+    if (ifd + 2 > buffer.byteLength) throw damaged('TIFF', 'IFD buiten het bestand');
     const cnt = u16(ifd);
+    if (ifd + 2 + cnt * 12 > buffer.byteLength) throw damaged('TIFF', 'IFD buiten het bestand');
     const tags = {};
     const tsize = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
     for (let i = 0; i < cnt; i++) {
@@ -157,6 +225,7 @@
       const sz = (tsize[type] || 1) * n;
       const off = sz <= 4 ? e + 8 : u32(e + 8);
       const vals = [];
+      if (off + sz > buffer.byteLength) { if ([256, 257, 258, 273, 277, 279].includes(tag)) throw damaged('TIFF', 'tag ' + tag); continue; }
       for (let k = 0; k < Math.min(n, 100000); k++) {
         if (type === 3) vals.push(u16(off + k * 2));
         else if (type === 4) vals.push(u32(off + k * 4));
@@ -168,18 +237,25 @@
     }
     const g = (t, d) => (tags[t] ? tags[t][0] : d);
     const w = g(256), h = g(257);
+    checkSize('TIFF', w, h);
     const bps = g(258, 1), spp = g(277, 1), comp = g(259, 1), photo = g(262, 1);
     const planar = g(284, 1), predictor = g(317, 1), sfmt = g(339, 1);
-    if (tags[322]) throw new Error('TIFF met tegels wordt niet ondersteund. Sla op als PNG of gewone TIFF.');
+    if (tags[322]) throw new Error('TIFF met tegels (tiled) wordt niet ondersteund. Sla op als gewone TIFF (strips) of PNG.');
+    if (photo === 3) throw new Error('TIFF met kleurenpalet wordt niet ondersteund. Sla op als RGB of grijswaarden.');
+    if (sfmt === 2) throw new Error('TIFF met signed integers wordt niet ondersteund. Sla op als unsigned 16-bit of 32-bit float.');
+    if (predictor === 3) throw new Error('TIFF met floating-point predictor wordt niet ondersteund. Sla op zonder predictor.');
+    if (![8, 16, 32].includes(bps)) throw new Error('TIFF: ' + bps + ' bits per kanaal wordt niet ondersteund');
     const offsets = tags[273], counts = tags[279];
     const rps = g(278, h);
     if (!offsets) throw new Error('TIFF: geen beelddata');
     const bytesPS = bps / 8;
     const strips = [];
     for (let i = 0; i < offsets.length; i++) {
-      let data = new Uint8Array(buffer, offsets[i], counts ? counts[i] : buffer.byteLength - offsets[i]);
+      const len = counts ? counts[i] : buffer.byteLength - offsets[i];
+      if (offsets[i] + len > buffer.byteLength) throw damaged('TIFF', `strip ${i + 1} van ${offsets.length} ontbreekt`);
+      let data = new Uint8Array(buffer, offsets[i], len);
       if (comp === 5) data = lzwDecode(data);
-      else if (comp === 8 || comp === 32946) data = await inflate(data);
+      else if (comp === 8 || comp === 32946) { try { data = await inflate(data); } catch (e) { throw damaged('TIFF', 'compressie: ' + e.message); } }
       else if (comp === 32773) data = packbits(data);
       else if (comp !== 1) throw new Error('TIFF-compressie ' + comp + ' wordt niet ondersteund');
       strips.push(data);
@@ -195,7 +271,6 @@
       if (bps === 32) return sfmt === 3 ? dvS.getFloat32(o, le) : dvS.getUint32(o, le);
       throw new Error('TIFF: ' + bps + ' bits per kanaal wordt niet ondersteund');
     };
-    let fmax = 0;
     for (let s = 0; s < strips.length; s++) {
       const plane = planar === 2 ? Math.floor(s / stripsPerPlane) : 0;
       const y0 = (s % stripsPerPlane) * rps;
@@ -217,14 +292,12 @@
             }
             const ch = planar === 1 ? c : plane;
             if (ch > 2) continue;
-            const val = sfmt === 3 ? v : v / maxv;
-            if (sfmt === 3 && val > fmax) fmax = val;
-            chans[ch][y * w + x] = val;
+            chans[ch][y * w + x] = sfmt === 3 ? v : v / maxv;
           }
         }
       }
     }
-    if (sfmt === 3 && fmax > 1) for (const ch of chans) for (let i = 0; i < ch.length; i++) ch[i] /= fmax;
+    if (sfmt === 3) normaliseFloat(spp < 3 || photo < 2 ? [img.r] : chans);
     if (spp < 3 || photo < 2) {
       if (photo === 0) for (let i = 0; i < img.r.length; i++) img.r[i] = 1 - img.r[i];
       img.g.set(img.r); img.b.set(img.r); img.mono = true;
@@ -332,11 +405,11 @@
     for (let i = 0; i < head.length; i++) u8[i] = head.charCodeAt(i) & 0x7f;
     const dv = new DataView(buf, head.length);
     let o = 0;
-    for (const ch of [r, g, b]) for (let y = h - 1; y >= 0; y--) for (let x = 0; x < w; x++) { dv.setFloat32(o, ch[y * w + x], false); o += 4; }
+    for (const ch of [r, g, b]) for (let y = h - 1; y >= 0; y--) for (let x = 0; x < w; x++) { const v = ch[y * w + x]; dv.setFloat32(o, v > 0 ? (v < 1 ? v : 1) : 0, false); o += 4; }
     return buf;
   }
 
-  const api = { readFITS, readTIFF, writeTIFF16, writeFITS, makeImage, debayer, flipV };
+  const api = { readFITS, readTIFF, writeTIFF16, writeFITS, makeImage, debayer, flipV, normaliseFloat, MAX_PIXELS };
   root.AstroFormats = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);
