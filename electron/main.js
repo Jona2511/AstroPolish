@@ -57,7 +57,12 @@ app.whenReady().then(() => {
   // (used to copy error details).
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(ALLOWED_PERMISSIONS.has(permission)));
   session.defaultSession.setPermissionCheckHandler((wc, permission) => ALLOWED_PERMISSIONS.has(permission));
-  Menu.setApplicationMenu(null);
+  // Windows/Linux: no menu bar (the app has its own). macOS always shows a menu bar and needs the
+  // standard app/edit/window menus for Cmd+Q, Cmd+C/V in text fields, Cmd+M and so on.
+  Menu.setApplicationMenu(process.platform === 'darwin'
+    // Undo/redo/select-all are left out on purpose: the app handles Cmd+Z, Shift+Cmd+Z and Cmd+A itself.
+    ? Menu.buildFromTemplate([{ role: 'appMenu' }, { label: 'Edit', submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }] }, { role: 'windowMenu' }])
+    : null);
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

@@ -2,7 +2,7 @@
   "name": "astropolish",
   "productName": "AstroPolish",
   "version": "3.2.0",
-  "description": "Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi, met alle tools van de grote programma's.",
+  "description": "Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met \u00e9\u00e9n klik mooi, met alle tools van de grote programma's.",
   "main": "electron/main.js",
   "author": "Jonathan van Zijverden",
   "license": "MIT",
@@ -12,7 +12,8 @@
     "dist": "electron-builder --win --publish never",
     "lint": "node test/lint.js",
     "test": "node test/lint.js && node test/formats-test.js && node test/algorithms-test.js && node test/project-test.js && node test/electron-security-test.js && node test/ops-test.js && node test/stack-test.js",
-    "test:ui": "python3 test/ui-test.py"
+    "test:ui": "python3 test/ui-test.py",
+    "dist:mac": "electron-builder --mac --publish never"
   },
   "devDependencies": {
     "electron": "^45.5.0",
@@ -58,6 +59,30 @@
     },
     "portable": {
       "artifactName": "AstroPolish-${version}-portable.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.photography",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "artifactName": "AstroPolish-${version}-mac.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "AstroPolish ${version}"
     }
   }
 }

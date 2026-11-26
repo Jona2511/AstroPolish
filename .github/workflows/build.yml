@@ -83,6 +83,44 @@ jobs:
         with:
           name: AstroPolish-Windows
           path: dist/*.exe
+
+  mac:
+    needs: [test, ui]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build .dmg and .zip (universal for Apple Silicon and Intel, ad-hoc signed)
+        run: npx electron-builder --mac --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify signature and architectures (arm64 + x86_64)
+        run: |
+          APP=$(find dist -maxdepth 3 -name "AstroPolish.app" | head -1)
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/AstroPolish"
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: AstroPolish-macOS
+          path: |
+            dist/*.dmg
+            dist/*.zip
+
+  release:
+    needs: [windows, mac]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - name: Read version
         id: v
         shell: bash
@@ -91,7 +129,6 @@ jobs:
       # replaces the files of an existing release (so a version always means the same build).
       - name: Check whether this version was already released
         id: exists
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -102,16 +139,22 @@ jobs:
             echo "released=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Publish release
-        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && steps.exists.outputs.released == 'false'
+        if: steps.exists.outputs.released == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
           name: AstroPolish ${{ steps.v.outputs.version }}
           target_commitish: ${{ github.sha }}
-          files: dist/*.exe
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
           body: |
             **Download voor Windows**
             - `AstroPolish-${{ steps.v.outputs.version }}-portable.exe`: direct starten, niets installeren
             - `AstroPolish-${{ steps.v.outputs.version }}-setup.exe`: installeren met snelkoppeling op het bureaublad
 
-            Windows SmartScreen kan waarschuwen omdat de app niet digitaal ondertekend is: kies *Meer informatie* → *Toch uitvoeren*.
+            **Download voor macOS** (Apple Silicon en Intel, macOS 12 of nieuwer)
+            - `AstroPolish-${{ steps.v.outputs.version }}-mac.dmg`: openen en AstroPolish naar Programma's slepen
+
+            De app is niet digitaal ondertekend. Windows SmartScreen: kies *Meer informatie* → *Toch uitvoeren*. macOS: open de app één keer, ga naar *Systeeminstellingen → Privacy en beveiliging* en kies *Open toch*.
