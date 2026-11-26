@@ -32,6 +32,8 @@ jobs:
         run: node test/ops-test.js
       - name: Stacking
         run: node test/stack-test.js
+      - name: Preset quality tests (synthetic scenes)
+        run: node test/presets-test.js
       - name: Legacy engine presets
         run: node test/engine-test.js /tmp/astropolish-test
         env:

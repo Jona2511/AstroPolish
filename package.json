@@ -11,7 +11,7 @@
     "start": "electron .",
     "dist": "electron-builder --win --publish never",
     "lint": "node test/lint.js",
-    "test": "node test/lint.js && node test/formats-test.js && node test/algorithms-test.js && node test/project-test.js && node test/electron-security-test.js && node test/ops-test.js && node test/stack-test.js",
+    "test": "node test/lint.js && node test/formats-test.js && node test/algorithms-test.js && node test/project-test.js && node test/electron-security-test.js && node test/ops-test.js && node test/stack-test.js && node test/presets-test.js",
     "test:ui": "python3 test/ui-test.py",
     "dist:mac": "electron-builder --mac --publish never"
   },

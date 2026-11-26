@@ -7,6 +7,7 @@ Interfacetest: start `python3 -m http.server 8765` in `app/` en draai `python3 t
 ## Testdata
 
 - `test/fixtures/` bevat kleine FITS- en TIFF-bestanden (37 × 23 pixels, oneven om rij-/kolomfouten te vangen). Ze zijn gemaakt met **onafhankelijke** software (een numpy-FITS-schrijver volgens de FITS 4.0-standaard, `tifffile` en Pillow), niet met AstroPolish zelf. Elk bestand bevat hetzelfde analytische patroon, zodat de test van elke pixel de juiste waarde kent. Opnieuw maken: `python3 test/fixtures/make_fixtures.py`.
+- `test/lib/scenes.js` maakt realistische lineaire scènes (M42-achtige nevel met felle kern, sterrenstelsel, sterrenhoop, Melkweg, duoband, mono) met lichtvervuiling en bekende waarheid, plus objectieve maten (luchtniveau en -ruis, luchtkleur, contrast van zwak detail, kernstructuur, halo's, clipping). Gebruikt door `test/presets-test.js`; zie ook `docs/stretch.md`.
 - `test/lib/synth.js` maakt synthetische sterrenvelden met bekende waarheid (achtergrond, gradient, sterren met bekende FWHM, ruis met bekende sigma) voor de algoritmetests.
 
 ## Wat synthetische data wel en niet aantoont
