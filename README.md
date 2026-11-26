@@ -16,7 +16,6 @@ Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebo
 | | |
 |---|---|
 | 🪟 **Windows-app** | Ga naar [Releases](../../releases/latest) en download `AstroPolish-…-portable.exe` (direct starten, niets installeren) of `AstroPolish-…-setup.exe` (installatieprogramma met snelkoppeling). |
-| 🌐 **In de browser** | [jona2511.github.io/astropolish](https://jona2511.github.io/astropolish/): werkt in Chrome en Edge zonder installatie. |
 
 > Windows SmartScreen kan bij de eerste keer waarschuwen omdat de app (nog) niet digitaal ondertekend is. Kies dan *Meer informatie* → *Toch uitvoeren*.
 
