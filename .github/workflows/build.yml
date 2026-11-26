@@ -2,8 +2,9 @@ name: Build Windows app
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -17,18 +18,51 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Engine test
+      - name: Lint (syntax + project rules)
+        run: node test/lint.js
+      - name: File formats (FITS/TIFF fixtures)
+        run: node test/formats-test.js
+      - name: Algorithms (numerical properties)
+        run: node test/algorithms-test.js
+      - name: Projects and validation
+        run: node test/project-test.js
+      - name: Electron security settings
+        run: node test/electron-security-test.js
+      - name: Layer engine (all operations, masks, blend modes)
+        run: node test/ops-test.js
+      - name: Stacking
+        run: node test/stack-test.js
+      - name: Legacy engine presets
         run: node test/engine-test.js /tmp/astropolish-test
         env:
           W: '960'
           H: '540'
-      - name: Stacking test
-        run: node test/stack-test.js
-      - name: Layer engine test
-        run: node test/ops-test.js
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright (uses the runner's Google Chrome)
+        run: pip install playwright==1.48.0
+      - name: Interface test (full workflow in Chrome)
+        run: |
+          cd app && python -m http.server 8765 &
+          sleep 2
+          python test/ui-test.py
+        env:
+          OUT: /tmp/ui
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screenshots
+          path: /tmp/ui/*.png
 
   windows:
-    needs: test
+    needs: [test, ui]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -37,6 +71,9 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install --no-audit --no-fund
+      - name: Audit dependencies (report only)
+        continue-on-error: true
+        run: npm audit --omit=optional
       - name: Build .exe
         run: npx electron-builder --win --publish never
         env:
@@ -50,15 +87,28 @@ jobs:
         id: v
         shell: bash
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Publish release
+      # A release is only created for a NEW version number. Pushing other changes to main never
+      # replaces the files of an existing release (so a version always means the same build).
+      - name: Check whether this version was already released
+        id: exists
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.v.outputs.version }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"; echo "Release v${{ steps.v.outputs.version }} already exists: not publishing."
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish release
+        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && steps.exists.outputs.released == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
           name: AstroPolish ${{ steps.v.outputs.version }}
           target_commitish: ${{ github.sha }}
           files: dist/*.exe
-          overwrite_files: true
           body: |
             **Download voor Windows**
             - `AstroPolish-${{ steps.v.outputs.version }}-portable.exe`: direct starten, niets installeren

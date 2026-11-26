@@ -285,4 +285,20 @@ const f = (v, d) => (Number.isFinite(v) ? v.toFixed(d === undefined ? 4 : d) : S
   check('Pipeline: a NaN never reaches the output (clampAll)', finite01(res));
 }
 
+// ------------------------------------------ 13. fast filters equal naive reference implementations ---
+{
+  const R = rng(41);
+  const naiveMM = (a, w, h, r, mx) => { const o = new Float32Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let v = mx ? -Infinity : Infinity; for (let yy = Math.max(0, y - r); yy <= Math.min(h - 1, y + r); yy++) for (let xx = Math.max(0, x - r); xx <= Math.min(w - 1, x + r); xx++) { const s = a[yy * w + xx]; v = mx ? Math.max(v, s) : Math.min(v, s); } o[y * w + x] = v; } return o; };
+  const naiveBox = (a, w, h, r) => { const o = new Float32Array(w * h); const cl = (v, n) => Math.min(n - 1, Math.max(0, v)); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let s = 0; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) s += a[cl(y + dy, h) * w + cl(x + dx, w)]; o[y * w + x] = s / (2 * r + 1) ** 2; } return o; };
+  let mmOk = true, boxErr = 0;
+  for (const [w, h] of [[1, 1], [3, 2], [9, 1], [1, 9], [37, 23]]) for (const r of [0, 1, 2, 5, 12]) {
+    const a = new Float32Array(w * h).map(() => R.u());
+    for (const mx of [false, true]) { const fast = I.minMaxFilter(a, w, h, r, mx), ref = naiveMM(a, w, h, r, mx); if (!fast.every((v, i) => v === ref[i])) mmOk = false; }
+    const fb = I.boxBlur(a, w, h, r), rb = naiveBox(a, w, h, r);
+    for (let i = 0; i < fb.length; i++) boxErr = Math.max(boxErr, Math.abs(fb[i] - rb[i]));
+  }
+  check('minMaxFilter (van Herk) equals the naive min/max filter exactly', mmOk);
+  check('boxBlur equals the naive (2r+1)^2 mean with clamped edges', boxErr < 1e-5, f(boxErr, 8));
+}
+
 summary('ALGORITHMS');

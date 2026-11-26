@@ -34,6 +34,13 @@
   // make sure the measurements (ctx) exist for these layers: run them once on the preview
   function warm(state, layers) { O.processStack(state.prev, layers, state.store, { cache: true }); }
 
+  // decode FITS/TIFF (async because deflate-compressed TIFF uses DecompressionStream)
+  async function decode(msg) {
+    const F = root.AstroFormats || (typeof require !== 'undefined' ? require('./formats.js') : null);
+    const img = ['tif', 'tiff'].includes(msg.ext) ? await F.readTIFF(msg.buffer) : F.readFITS(msg.buffer);
+    return { result: { cmd: 'decode', img }, transfer: [img.r.buffer, img.g.buffer, img.b.buffer] };
+  }
+
   function handle(state, msg) {
     switch (msg.cmd) {
       case 'source': {
@@ -129,7 +136,7 @@
     }
   }
 
-  const api = { handle };
+  const api = { decode, handle };
   root.AstroCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);

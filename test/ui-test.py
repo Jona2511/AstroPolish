@@ -148,9 +148,87 @@ with sync_playwright() as p:
     page.keyboard.press('Control+s'); page.wait_for_selector('#dlg[open]'); page.screenshot(path=f'{OUT}/10-export.png'); page.click('#dlg .df .btn >> nth=0')
     page.keyboard.press('F1'); page.wait_for_selector('#dlg[open]'); page.click('#dlg .df .btn >> nth=0')
 
+    # ---- workflow: undo/redo is exact, project save -> reload gives an identical export
+    exp = """async (fmt) => { const b = await AstroApp.renderFull(AstroApp.D(), {format: 'png', quality: 1, size: 'orig', compare: false, text: false}); return Array.from(new Uint8Array(await b.arrayBuffer())).reduce((h, v) => (h * 31 + v) >>> 0, 7); }"""
+    h_now = page.evaluate(exp)
+    n_hist = page.evaluate('AstroApp.D().hIndex')
+    page.evaluate("AstroApp.addLayer('curves', {curves: {rgb: [[0,0],[0.4,0.6],[1,1]]}})"); wait_idle(page)
+    page.evaluate("AstroApp.addLayer('huesat', {sat: 0.5})"); wait_idle(page)
+    h_edit = page.evaluate(exp)
+    assert h_edit != h_now, 'edits changed nothing'
+    page.keyboard.press('Control+z'); wait_idle(page); page.keyboard.press('Control+z'); wait_idle(page)
+    assert page.evaluate('AstroApp.D().hIndex') == n_hist
+    assert page.evaluate(exp) == h_now, 'undo did not restore the exact result'
+    page.keyboard.press('Control+Shift+z'); wait_idle(page); page.keyboard.press('Control+Shift+z'); wait_idle(page)
+    assert page.evaluate(exp) == h_edit, 'redo did not restore the exact result'
+    print('undo/redo exact: ok')
+    # unsaved-changes flag + beforeunload guard
+    assert page.evaluate('AstroApp.D().dirty') is True
+    # save project (download fallback: no file picker in this test)
+    page.evaluate('window.showSaveFilePicker = undefined')
+    with page.expect_download() as dl:
+        page.keyboard.press('Control+Alt+s')
+    proj = dl.value.path()
+    assert page.evaluate('AstroApp.D().dirty') is False
+    # change things, then load the project again
+    page.evaluate("AstroApp.applyAction('mono')"); wait_idle(page)
+    page.evaluate("AstroApp.D().dirty = false")
+    page.set_input_files('#jsonInput', proj) if False else None
+    page.evaluate("document.getElementById('jsonInput').onchange = null")
+    page.evaluate("""() => { const app = window.AstroApp; }""")
+    # use the real menu path: File > Load project
+    page.evaluate("""() => { const m = [...document.querySelectorAll('.mtop')][0]; m.click(); }""")
+    item = page.locator('.menu .mi', has_text='laden').first if page.locator('.menu .mi', has_text='laden').count() else page.locator('.menu .mi', has_text='Load').first
+    with page.expect_file_chooser() as fc:
+        item.click()
+    fc.value.set_files(proj)
+    page.wait_for_timeout(500); wait_idle(page)
+    assert page.evaluate(exp) == h_edit, 'project reload does not reproduce the export'
+    print('project save/reload exact: ok')
+    # ---- error handling: corrupt FITS shows a clear dialog with technical details, app keeps working
+    page.set_input_files('#fileInput', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'fits_truncated.fits'))
+    page.wait_for_selector('#dlg[open]', timeout=20000)
+    txt = page.inner_text('#dlg')
+    assert ('onvolledig' in txt or 'incomplete' in txt.lower() or 'beschadigd' in txt), txt
+    assert page.locator('#dlg details pre').count() == 1
+    page.screenshot(path=f'{OUT}/12-error.png')
+    page.click('#dlg .df .btn.primary')
+    # NaN TIFF opens, NaN pixels replaced
+    page.set_input_files('#fileInput', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures', 'tif_f32_nan.tif'))
+    page.wait_for_function("() => AstroApp.D() && AstroApp.D().name === 'tif_f32_nan.tif' && AstroApp.D().src", timeout=30000); wait_idle(page)
+    # unsupported format
+    tmp = os.path.join(OUT, 'photo.cr2'); open(tmp, 'wb').write(b'not really raw')
+    page.set_input_files('#fileInput', tmp)
+    page.wait_for_selector('#dlg[open]', timeout=20000)
+    assert 'cr2' in page.inner_text('#dlg')
+    page.click('#dlg .df .btn.primary')
+    # ---- invalid numeric input is ignored, not turned into NaN
+    page.evaluate("AstroApp.addLayer('exposure')"); wait_idle(page)
+    before_v = page.evaluate("AstroApp.curLayer().params.exposure")
+    page.locator('#pb-b .prow input[type=number]').first.fill('')
+    page.locator('#pb-b .prow input[type=number]').first.dispatch_event('change')
+    wait_idle(page)
+    v = page.evaluate("AstroApp.curLayer().params.exposure")
+    assert isinstance(v, (int, float)) and v == v and v == before_v, v
+    print('error handling + input validation: ok')
+    # ---- closing with unsaved edits asks first
+    page.evaluate("AstroApp.D().dirty = true")
+    seen_dlg = []
+    def on_dialog(d):
+        seen_dlg.append(d.type)
+        (d.dismiss if d.type == 'confirm' else d.accept)()
+    page.on('dialog', on_dialog)
+    n_docs = page.evaluate('AstroApp.S.docs.length')
+    page.mouse.click(700, 500)
+    page.keyboard.press('Control+w'); page.wait_for_timeout(500)
+    assert seen_dlg == ['confirm'], 'no confirmation when closing an edited document: %r' % seen_dlg
+    assert page.evaluate('AstroApp.S.docs.length') == n_docs, 'document closed although the user cancelled'
+
     # english
     page.evaluate("I18N.setLang('en')"); page.evaluate("AstroApp.setTool('hand')")
+    seen_dlg.clear()
     page.reload(); page.wait_for_selector('#menubar .mtop')
+    assert seen_dlg == ['beforeunload'], 'no unsaved-changes warning on reload: %r' % seen_dlg
     page.screenshot(path=f'{OUT}/11-en-start.png')
     b.close()
 
