@@ -18,6 +18,23 @@ with sync_playwright() as p:
     page.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' else None)
     page.goto(URL)
     page.wait_for_selector('#menubar .mtop')
+    page.screenshot(path=f'{OUT}/s0-start.png')
+    # ---- simple mode (default for new users)
+    assert page.evaluate("document.body.classList.contains('simple')")
+    page.click('#ssDemo')
+    page.wait_for_function('() => AstroApp.D() && AstroApp.D().layers.length > 3', timeout=60000)
+    wait_idle(page)
+    page.screenshot(path=f'{OUT}/s1-simple.png')
+    page.click('.stile[data-action="bright"]'); wait_idle(page)
+    for k, v in [('bright', '0.3'), ('noise', '0.6'), ('stars', '0.5'), ('lp', '1'), ('warm', '0.3'), ('sharp', '0.5'), ('color', '1.8'), ('contrast', '0.3')]:
+        page.eval_on_selector(f'.srow[data-k="{k}"] input', f"(i) => {{ i.value = '{v}'; i.dispatchEvent(new Event('input')); }}")
+        wait_idle(page)
+    page.screenshot(path=f'{OUT}/s2-sliders.png')
+    print('simple layers:', page.evaluate('AstroApp.D().layers.map(l=>l.op).join(",")'))
+    page.keyboard.press('Control+z'); wait_idle(page)
+    page.click('.modeswitch button[data-mode="expert"]'); wait_idle(page)
+    assert page.evaluate("!document.body.classList.contains('simple')")
+    page.evaluate("AstroApp.S.docs.length = 0; AstroApp.S.cur = null; AstroApp.setMode('expert')")
     page.screenshot(path=f'{OUT}/0-start.png')
     assert page.evaluate('AstroApp.isWorker'), 'worker not active'
 

@@ -49,6 +49,7 @@
     beforeCanvas: document.createElement('canvas'), afterCanvas: document.createElement('canvas'), snapCanvas: document.createElement('canvas'),
     afterData: null, hist: null, histCh: 'rgb', histLog: false, renderMs: 0, region: null,
     previewBusy: false, previewQueued: false, regionTimer: 0, token: 0, mouse: null, drag: null,
+    mode: store.get('mode', 'simple'),
     prefs: Object.assign({ preview: 1200, cache: 12 }, store.get('prefs', {})),
     panels: store.get('panels', { nav: true, hist: true, info: true, props: true, adj: true, layers: true, history: true, actions: true }),
     panelTab: { a: 'nav', b: 'props', c: 'layers', d: 'actions' },
@@ -808,7 +809,7 @@
   const SHORT_OPS = { levels: 'Ctrl+L', curves: 'Ctrl+M', huesat: 'Ctrl+U', colorbalance: 'Ctrl+B', invert: 'Ctrl+I', bw: 'Alt+Shift+Ctrl+B' };
   function adjMenu(groups) {
     const items = [];
-    for (const g of groups) for (const k of Object.keys(O.OPS).filter((x) => O.OPS[x].g === g && x !== 'text')) items.push({ label: opName(k), icon: ICON[k], action: () => addLayer(k), shortcut: SHORT_OPS[k] });
+    for (const g of groups) for (const k of Object.keys(O.OPS).filter((x) => O.OPS[x].g === g && x !== 'text')) items.push({ label: opName(k), icon: ICON[k], action: () => addLayer(k), shortcut: SHORT_OPS[k], help: helpOf(k) });
     return items;
   }
   function menus() {
@@ -924,11 +925,13 @@
       [L('Venster', 'Window'), [
         ...[['nav', 'Navigator', 'Navigator'], ['hist', 'Histogram', 'Histogram'], ['info', 'Info', 'Info'], ['props', 'Eigenschappen', 'Properties'], ['adj', 'Aanpassingen', 'Adjustments'], ['layers', 'Lagen', 'Layers'], ['history', 'Geschiedenis', 'History'], ['actions', 'Acties', 'Actions']].map(([k, nl, en]) => ({ label: L(nl, en), chk: S.panels[k], action: () => { S.panels[k] = !S.panels[k]; store.set('panels', S.panels); renderDock(); } })),
         '-',
+        { label: L('Eenvoudige modus', 'Simple mode'), chk: S.mode === 'simple', action: () => setMode(S.mode === 'simple' ? 'expert' : 'simple') },
         { label: L('Werkruimte herstellen', 'Reset workspace'), action: () => { S.panels = { nav: true, hist: true, info: true, props: true, adj: true, layers: true, history: true, actions: true }; store.set('panels', S.panels); renderDock(); } },
       ]],
       [L('Help', 'Help'), [
         { label: L('AstroPolish Help', 'AstroPolish Help'), shortcut: 'F1', action: helpDialog },
         { label: L('Sneltoetsen', 'Keyboard shortcuts'), action: keysDialog },
+        { label: L('Eenvoudige modus', 'Simple mode'), chk: S.mode === 'simple', action: () => setMode(S.mode === 'simple' ? 'expert' : 'simple') },
         '-',
         { label: 'Nederlands', chk: I18N.getLang() === 'nl', action: () => { I18N.setLang('nl'); renderAll(); } },
         { label: 'English', chk: I18N.getLang() === 'en', action: () => { I18N.setLang('en'); renderAll(); } },
@@ -945,13 +948,20 @@
   function renderMenubar() {
     const mb = $('menubar'); mb.innerHTML = '';
     mb.appendChild(el('span', '', '<svg class="logo" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#1473e6"/><path d="M32 12l3.2 12.8L48 28l-12.8 3.2L32 44l-3.2-12.8L16 28l12.8-3.2z" fill="#fff"/></svg>'));
-    menus().forEach(([label], idx) => {
+    const ms = menus();
+    ms.forEach(([label], idx) => {
+      if (S.mode === 'simple' && ![0, 1, 7, 9].includes(idx)) return;
       const b = el('button', 'mtop', esc(label));
       b.onclick = (e) => { e.stopPropagation(); if (openMenu === idx) closeMenus(); else showTopMenu(idx, b); };
       b.onmouseenter = () => { if (openMenu !== null && openMenu !== idx && openMenu >= 0) showTopMenu(idx, b); };
       mb.appendChild(b);
     });
     mb.appendChild(el('span', 'spacer'));
+    const sw = el('div', 'modeswitch');
+    for (const [m, nl, en, tnl, ten] of [['simple', 'Eenvoudig', 'Simple', 'Stijl kiezen, een paar schuifjes, opslaan', 'Pick a style, a few sliders, save'], ['expert', 'Expert', 'Expert', 'Alle gereedschappen, lagen en maskers (Photoshop-stijl)', 'All tools, layers and masks (Photoshop style)']]) {
+      const b = el('button', S.mode === m ? 'on' : '', esc(L(nl, en))); b.title = L(tnl, ten); b.dataset.mode = m; b.onclick = (e) => { e.stopPropagation(); if (S.mode !== m) setMode(m); }; sw.appendChild(b);
+    }
+    mb.appendChild(sw);
     mb.appendChild(el('span', 'appname', 'AstroPolish 3'));
   }
   function closeMenus() { $('menuLayer').innerHTML = ''; openMenu = null; document.querySelectorAll('.mtop').forEach((x) => x.classList.remove('open')); }
@@ -967,6 +977,7 @@
     for (const it of items) {
       if (it === '-') { m.appendChild(el('div', 'sep')); continue; }
       const mi = el('div', 'mi' + (it.dis ? ' dis' : '') + (it.sub ? ' sub' : ''), `<span class="chk">${it.chk ? '✓' : ''}</span>${it.icon ? `<span style="width:16px;text-align:center">${it.icon}</span>` : ''}<span>${esc(it.label)}</span>${it.shortcut ? `<span class="sc">${esc(it.shortcut)}</span>` : ''}`);
+      if (it.help) mi.title = it.help;
       mi.onmouseenter = () => {
         m.querySelectorAll('.mi.open').forEach((o) => o.classList.remove('open'));
         [...layer.querySelectorAll('.menu')].filter((mm) => +mm.dataset.depth > depth).forEach((mm) => mm.remove());
@@ -1006,6 +1017,12 @@
   const PANEL_GROUPS = [['a', [['nav', 'Navigator', 'Navigator'], ['hist', 'Histogram', 'Histogram'], ['info', 'Info', 'Info']]], ['b', [['props', 'Eigenschappen', 'Properties'], ['adj', 'Aanpassingen', 'Adjustments']]], ['c', [['layers', 'Lagen', 'Layers']]], ['d', [['actions', 'Acties', 'Actions'], ['history', 'Geschiedenis', 'History']]]];
   function renderDock() {
     const dock = $('dock'); dock.innerHTML = '';
+    if (S.mode === 'simple') {
+      const p = el('section', 'panel simplepanel');
+      p.appendChild(el('div', 'phead', `<span class="ptab on">${L('Snel bewerken', 'Quick edit')}</span>`));
+      const body = el('div', 'pbody'); body.id = 'pb-s'; p.appendChild(body); dock.appendChild(p);
+      pSimple(body); return;
+    }
     for (const [gid, tabs] of PANEL_GROUPS) {
       const vis = tabs.filter(([k]) => S.panels[k]);
       if (!vis.length) continue;
@@ -1027,6 +1044,7 @@
   }
   function renderPanels(which) {
     const all = !which, want = (k) => all || which.includes(k);
+    if (S.mode === 'simple') { if ($('pb-s') && (all || which.includes('layers') || which.includes('props'))) pSimple($('pb-s')); const d0 = D(); if (d0 && $('sUndo')) { $('sUndo').disabled = d0.hIndex <= 0; $('sRedo').disabled = d0.hIndex >= d0.history.length - 1; } renderStatus(); return; }
     const a = S.panelTab.a, b = S.panelTab.b, d2 = S.panelTab.d;
     if ($('pb-a') && want(a)) ({ nav: pNav, hist: pHist, info: pInfo })[a]($('pb-a'));
     if ($('pb-b') && want(b)) ({ props: pProps, adj: pAdj })[b]($('pb-b'));
@@ -1116,7 +1134,7 @@
     for (const [title, ops] of sections) {
       box.appendChild(el('div', 'psec', esc(title)));
       const grid = el('div', 'adjgrid');
-      for (const k of ops) { const b = el('button', '', ICON[k] || '•'); b.title = opName(k); b.dataset.op = k; b.onclick = () => (D() ? addLayer(k) : toast(L('Open eerst een foto.', 'Open a photo first.'))); grid.appendChild(b); }
+      for (const k of ops) { const b = el('button', '', ICON[k] || '•'); b.title = opName(k) + (helpOf(k) ? '\n' + helpOf(k) : ''); b.dataset.op = k; b.onclick = () => (D() ? addLayer(k) : toast(L('Open eerst een foto.', 'Open a photo first.'))); grid.appendChild(b); }
       box.appendChild(grid);
     }
     box.appendChild(el('p', 'pnote', L('Klik op een icoon om een nieuwe laag boven de geselecteerde laag te maken. Is er een selectie, dan wordt die het masker.', 'Click an icon to add a new layer above the selected layer. If there is a selection, it becomes the mask.')));
@@ -1138,7 +1156,7 @@
       const hasMask = l.op !== 'text' && (l.mask.type !== 'none' || (l.mask.strokes && l.mask.strokes.length) || l.mask.invert);
       const li = el('li', 'layer' + (l.id === d.sel ? ' sel' : '') + (l.on ? '' : ' off'),
         `<button class="eye" title="${L('Tonen/verbergen', 'Show/hide')}">👁</button><span class="thumb">${ICON[l.op] || '•'}</span><span class="nm">${esc(layerTitle(l))}<small>${l.op === 'text' ? L('tekst', 'text') : esc(L(...BLEND_NAMES[l.blend || 'normal']))}${l.opacity < 1 ? ' · ' + Math.round(l.opacity * 100) + '%' : ''}</small></span>${hasMask ? `<span class="mk${l.mask.invert ? ' inv' : ''}${S.viewMaskId === l.id ? ' view' : ''}" title="${L('Masker (Alt+klik = tonen)', 'Mask (Alt+click = show)')}">${maskBadge(l.mask)}</span>` : '<span></span>'}`);
-      li.draggable = true; li.dataset.id = l.id;
+      li.draggable = true; li.dataset.id = l.id; li.title = helpOf(l.op);
       li.onclick = (e) => { if (e.target.classList.contains('eye')) return; if (e.altKey && hasMask) { toggleViewMask(l); return; } selectLayer(l.id); };
       li.querySelector('.eye').onclick = (e) => { e.stopPropagation(); toggleLayer(l.id); };
       li.ondblclick = () => { const n = window.prompt(L('Naam van de laag:', 'Layer name:'), layerTitle(l)); if (n !== null) { l.name = n; renderPanels(['layers', 'props']); commit(L('Laag hernoemd', 'Layer renamed'), true); } };
@@ -1180,6 +1198,7 @@
     const title = el('div', 'ptitle', `<span class="ic">${ICON[ly.op] || ''}</span>`);
     const nm = el('input'); nm.type = 'text'; nm.value = layerTitle(ly); nm.onchange = () => { ly.name = nm.value; renderPanels(['layers']); commit(L('Laag hernoemd', 'Layer renamed'), true); };
     title.appendChild(nm); box.appendChild(title);
+    if (helpOf(ly.op)) box.appendChild(el('p', 'phelp', esc(helpOf(ly.op))));
     if (ly.op === 'text') { textProps(box, ly); return; }
     const op = O.OPS[ly.op];
     if (!op.p.length) box.appendChild(el('p', 'pnote', L('Deze laag heeft geen instellingen.', 'This layer has no settings.')));
@@ -1415,6 +1434,149 @@
     const my = store.get('actions', {});
     my[n.slice(0, 50)] = { layers: deep(d.layers).filter((l) => l.op !== 'heal').map((l) => { if (l.params.wbPick) l.params.wbPick = null; if (l.params.bgPick) l.params.bgPick = null; if (l.mask) l.mask.strokes = []; return l; }) };
     store.set('actions', my); d.action = 'my:' + n.slice(0, 50); renderPanels(['actions']); toast(L('Actie opgeslagen.', 'Action saved.'));
+  }
+
+
+  // ---------------------------------------------------------- simple mode ---
+  const HELP = {
+    hotpix: ['Haalt losse felle pixels (ruis van de camera) weg.', 'Removes single bright pixels (camera noise).'],
+    gradient: ['Haalt lichtvervuiling en ongelijke achtergrond weg, zodat de lucht overal even donker is.', 'Removes light pollution and an uneven background so the sky is equally dark everywhere.'],
+    vignfix: ['Maakt donkere hoeken lichter.', 'Brightens dark corners.'],
+    colorcal: ['Maakt de achtergrond neutraal grijs en geeft de sterren natuurlijke kleuren.', 'Makes the background neutral grey and gives stars natural colours.'],
+    deconv: ['Maakt sterren en details scherper door de wazigheid van de lucht terug te rekenen.', 'Sharpens stars and detail by undoing atmospheric blur.'],
+    stretch: ['De belangrijkste stap: maakt de donkere ruwe opname helder zodat de nevel zichtbaar wordt.', 'The key step: brightens the dark raw image so the nebula becomes visible.'],
+    hdr: ['Voorkomt dat felle kernen (zoals in Orion) wit uitbijten.', 'Keeps bright cores (like in Orion) from burning out to white.'],
+    hdrmt: ['Haalt detail terug in felle gebieden.', 'Recovers detail in bright areas.'],
+    palette: ['Kleuren voor foto\'s met een duoband-filter (rood/blauwgroen).', 'Colours for photos taken with a dual-band filter (red/teal).'],
+    scnr: ['Haalt een groene waas weg.', 'Removes a green cast.'],
+    starreduce: ['Maakt sterren kleiner zodat de nevel meer opvalt.', 'Makes stars smaller so the nebula stands out.'],
+    starsplit: ['Bewerk sterren apart: kleiner, minder fel, andere kleur of helemaal weg.', 'Edit stars separately: smaller, dimmer, different colour or removed.'],
+    spikes: ['Voegt kruisvormige stralen toe aan felle sterren.', 'Adds cross-shaped rays to bright stars.'],
+    denoise: ['Maakt korrelige ruis glad.', 'Smooths out grainy noise.'],
+    bgsmooth: ['Maakt alleen de donkere achtergrond gladder, niet de nevel.', 'Smooths only the dark background, not the nebula.'],
+    localcontrast: ['Laat structuur in de nevel meer uitkomen.', 'Brings out structure in the nebula.'],
+    sharpen: ['Maakt fijne details scherper zonder de ruis te versterken.', 'Sharpens fine detail without boosting noise.'],
+    wavelets: ['Versterkt detail per grootte, zoals in RegiStax. Vooral voor maan en planeten.', 'Boosts detail per size, like RegiStax. Mainly for moon and planets.'],
+    brightcon: ['Lichter/donkerder en meer of minder contrast.', 'Lighter/darker and more or less contrast.'],
+    levels: ['Zwartpunt, middentonen en witpunt instellen.', 'Set black point, midtones and white point.'],
+    curves: ['Trek aan de lijn om bepaalde helderheden lichter of donkerder te maken.', 'Drag the line to make certain brightness levels lighter or darker.'],
+    vibrance: ['Meer of minder kleur.', 'More or less colour.'],
+    huesat: ['Kleur verschuiven, verzadigen of één kleur geven.', 'Shift colour, saturate or colourise.'],
+    hsl: ['Pas één kleur aan, bijvoorbeeld alleen het rood van de nevel.', 'Adjust one colour, e.g. only the red of the nebula.'],
+    temptint: ['Warmer (geler) of koeler (blauwer).', 'Warmer (yellower) or cooler (bluer).'],
+    glow: ['Zachte gloed rond felle delen.', 'Soft glow around bright parts.'],
+    vignette: ['Donkere randen voor meer focus op het midden.', 'Dark edges to focus on the centre.'],
+    heal: ['Schilder over satellietstrepen of vlekken om ze weg te werken.', 'Paint over satellite trails or spots to remove them.'],
+    text: ['Tekst op de foto, bijvoorbeeld de naam van het object.', 'Text on the photo, e.g. the object name.'],
+  };
+  const helpOf = (op) => (HELP[op] ? L(HELP[op][0], HELP[op][1]) : '');
+  const ORDER = ['hotpix', 'vignfix', 'gradient', 'colorcal', 'deconv', 'stretch', 'hdr', 'hdrmt', 'palette', 'denoise', 'bgsmooth', 'starsplit', 'starreduce', 'localcontrast', 'sharpen', 'wavelets', 'brightcon', 'temptint', 'vibrance', 'hsl', 'scnr', 'spikes', 'glow', 'vignette', 'bw', 'huesat'];
+  function ensureLayer(op, init) {
+    const d = D(); let ly = d.layers.find((l) => l.op === op);
+    if (ly) return ly;
+    ly = O.newLayer(op, init);
+    const oi = ORDER.indexOf(op);
+    let at = d.layers.findIndex((l) => l.op === 'text' || (ORDER.indexOf(l.op) > oi));
+    if (at < 0) at = d.layers.length;
+    d.layers.splice(at, 0, ly);
+    return ly;
+  }
+  // simple controls: get() -> value, set(v)
+  const SIMPLE = [
+    { k: 'bright', nl: 'Helderheid', en: 'Brightness', hnl: 'Hoe helder de foto wordt.', hen: 'How bright the photo gets.', min: -1, max: 1, step: 0.01,
+      get: (d) => { const st = d.layers.find((l) => l.op === 'stretch' && l.on); const bc = d.layers.find((l) => l.op === 'brightcon'); return (bc ? bc.params.brightness : 0); },
+      set: (v) => { ensureLayer('brightcon', { brightness: 0, contrast: 0 }).params.brightness = v; } },
+    { k: 'contrast', nl: 'Contrast', en: 'Contrast', hnl: 'Verschil tussen licht en donker.', hen: 'Difference between light and dark.', min: -1, max: 1, step: 0.01,
+      get: (d) => { const l = d.layers.find((x) => x.op === 'brightcon'); return l ? l.params.contrast : 0; },
+      set: (v) => { ensureLayer('brightcon', { brightness: 0, contrast: 0 }).params.contrast = v; } },
+    { k: 'color', nl: 'Kleur', en: 'Colour', hnl: 'Meer of minder kleur.', hen: 'More or less colour.', min: 0, max: 3, step: 0.01,
+      get: (d) => { const l = d.layers.find((x) => x.op === 'vibrance'); return l ? l.params.saturation : 1; },
+      set: (v) => { ensureLayer('vibrance', { saturation: 1, vibrance: 0 }).params.saturation = v; } },
+    { k: 'warm', nl: 'Koel ↔ warm', en: 'Cool ↔ warm', hnl: 'Blauwer of geler.', hen: 'Bluer or yellower.', min: -1, max: 1, step: 0.01,
+      get: (d) => { const l = d.layers.find((x) => x.op === 'colorcal'); return l ? l.params.temperature : 0; },
+      set: (v) => { ensureLayer('colorcal', { neutralize: false, whiteBalance: 0 }).params.temperature = v; } },
+    { k: 'lp', nl: 'Lichtvervuiling weghalen', en: 'Remove light pollution', hnl: 'Maakt een oranje of ongelijke lucht egaal donker.', hen: 'Makes an orange or uneven sky evenly dark.', min: 0, max: 1, step: 0.01,
+      get: (d) => { const l = d.layers.find((x) => x.op === 'gradient' && x.on); return l ? l.params.amount : 0; },
+      set: (v) => { const l = ensureLayer('gradient', { amount: 0 }); l.params.amount = v; l.on = true; } },
+    { k: 'noise', nl: 'Ruis wegwerken', en: 'Reduce noise', hnl: 'Maakt korrel glad. Te veel maakt de foto wazig.', hen: 'Smooths grain. Too much makes the photo blurry.', min: 0, max: 1, step: 0.01,
+      get: (d) => { const l = d.layers.find((x) => x.op === 'denoise' && x.on); return l ? l.params.luma : 0; },
+      set: (v) => { const l = ensureLayer('denoise', { luma: 0, chroma: 0 }); l.params.luma = v; l.params.chroma = Math.min(1, v * 1.2); l.on = true; } },
+    { k: 'stars', nl: 'Sterren kleiner', en: 'Smaller stars', hnl: 'Laat de nevel of het sterrenstelsel meer opvallen.', hen: 'Makes the nebula or galaxy stand out more.', min: 0, max: 1, step: 0.01,
+      get: (d) => { const s2 = d.layers.find((x) => x.op === 'starsplit' && x.on); if (s2) return s2.params.reduce; const l = d.layers.find((x) => x.op === 'starreduce' && x.on); return l ? l.params.amount : 0; },
+      set: (v) => { const s2 = D().layers.find((x) => x.op === 'starsplit' && x.on); if (s2) { s2.params.reduce = v; return; } const l = ensureLayer('starreduce', { amount: 0 }); l.params.amount = v; l.on = true; } },
+    { k: 'sharp', nl: 'Scherpte', en: 'Sharpness', hnl: 'Maakt details scherper.', hen: 'Makes details crisper.', min: 0, max: 1.5, step: 0.01,
+      get: (d) => { const l = d.layers.find((x) => x.op === 'sharpen' && x.on); return l ? l.params.amount : 0; },
+      set: (v) => { const l = ensureLayer('sharpen', { amount: 0 }); l.params.amount = v; l.on = true; } },
+  ];
+  const STYLE_TILES = [['auto', '✨'], ['bright', '☀'], ['natural', '🌿'], ['nebula', '☁'], ['galaxy', '🌀'], ['cluster', '✦'], ['milkyway', '🌌'], ['starless', '○'], ['spikes', '✳'], ['dreamy', '💫'], ['mono', '◧'], ['hoo', 'Ⓗ'], ['foraxx', '🎨'], ['hubble', '🔭'], ['moon', '🌙'], ['moonColour', '🌕'], ['sun', '🌞'], ['sunHa', '🟠'], ['planet', '🪐']];
+  function setMode(m) {
+    S.mode = m; store.set('mode', m);
+    if (m === 'simple') { S.tool = 'hand'; S.cropRect = null; S.viewMaskId = null; const d = D(); if (d) d.selection = null; }
+    document.body.classList.toggle('simple', m === 'simple');
+    renderAll(); requestPreview();
+    setTimeout(() => { clampCenter(); draw(); }, 50);
+  }
+  function pSimple(box) {
+    const d = D(); box.innerHTML = '';
+    if (!d) {
+      box.appendChild(el('div', 'sstep', `<b>1</b> ${L('Open een foto', 'Open a photo')}`));
+      box.appendChild(el('p', 'pnote', L('Klik op <i>Foto openen</i> of sleep een foto in het venster. Het liefst het gestackte FITS-bestand van je telescoop.', 'Click <i>Open photo</i> or drop a photo on the window. Preferably the stacked FITS file from your telescope.')));
+      const b = el('button', 'btn primary big', L('Foto openen…', 'Open photo…')); b.onclick = () => $('fileInput').click(); box.appendChild(b);
+      const b2 = el('button', 'btn big', L('Probeer met een voorbeeld', 'Try with a sample')); b2.onclick = openDemo; box.appendChild(b2);
+      return;
+    }
+    box.appendChild(el('div', 'sstep', `<b>1</b> ${L('Kies een stijl', 'Choose a style')}`));
+    box.appendChild(el('p', 'pnote', L('De foto is al automatisch bewerkt. Vind je het niet mooi? Probeer een andere stijl.', 'The photo has already been edited automatically. Not happy? Try another style.')));
+    const grid = el('div', 'stylegrid');
+    const all = ACTIONS.flatMap(([, , list]) => list);
+    const det = d.detected && d.detected.type;
+    const showAll = S.simpleAllStyles;
+    const solar = ['moon', 'moonColour', 'sun', 'sunHa', 'planet'], nb = ['hoo', 'foraxx', 'hubble'];
+    const isSolar = solar.includes(det);
+    let tiles = STYLE_TILES.filter(([k]) => showAll || (isSolar ? solar.includes(k) || k === 'auto' : !solar.includes(k) && (d.detected && d.detected.dualBand ? true : !nb.includes(k))));
+    if (!showAll) tiles = tiles.slice(0, 9);
+    for (const [k, ic] of tiles) {
+      const a = all.find((x) => x[0] === k); if (!a) continue;
+      const b = el('button', 'stile' + (d.action === k ? ' on' : ''), `<span class="ic">${ic}</span><span>${esc(L(a[2], a[3]))}</span>`);
+      b.dataset.action = k;
+      b.onclick = () => applyAction(k);
+      grid.appendChild(b);
+    }
+    box.appendChild(grid);
+    const more = el('button', 'linkbtn', showAll ? L('Minder stijlen', 'Fewer styles') : L('Alle stijlen tonen', 'Show all styles'));
+    more.onclick = () => { S.simpleAllStyles = !showAll; pSimple(box); };
+    box.appendChild(more);
+
+    box.appendChild(el('div', 'sstep', `<b>2</b> ${L('Fijn afstellen (mag ook overslaan)', 'Fine-tune (optional)')}`));
+    for (const c of SIMPLE) {
+      const row = el('div', 'srow', `<div class="sl"><span>${esc(L(c.nl, c.en))}</span><span class="v"></span></div><input type="range" min="${c.min}" max="${c.max}" step="${c.step}"><div class="sh">${esc(L(c.hnl, c.hen))}</div>`);
+      const i = row.querySelector('input'), v = row.querySelector('.v');
+      const show = (x) => { v.textContent = c.k === 'color' ? Math.round(x * 100) + '%' : (x > 0 && c.min < 0 ? '+' : '') + Math.round(x * 100); };
+      const cur = c.get(d); i.value = cur; show(cur);
+      i.oninput = () => { c.set(+i.value); show(+i.value); requestPreview(); commit(L(c.nl, c.en)); };
+      i.ondblclick = () => { const def = c.k === 'color' ? 1 : 0; i.value = def; i.oninput(); };
+      row.dataset.k = c.k;
+      box.appendChild(row);
+    }
+    const rb = el('div', 'pbtns');
+    const r1 = el('button', 'btn sm', '↺ ' + L('Stijl opnieuw toepassen', 'Re-apply style')); r1.onclick = () => applyAction(d.action || 'auto');
+    const r2 = el('button', 'btn sm', '↶ ' + L('Ongedaan', 'Undo')); r2.onclick = undo; r2.disabled = d.hIndex <= 0; r2.id = 'sUndo';
+    const r3 = el('button', 'btn sm', '↷ ' + L('Opnieuw', 'Redo')); r3.onclick = redo; r3.disabled = d.hIndex >= d.history.length - 1; r3.id = 'sRedo';
+    rb.appendChild(r2); rb.appendChild(r3); rb.appendChild(r1); box.appendChild(rb);
+
+    box.appendChild(el('div', 'sstep', `<b>3</b> ${L('Bekijken en opslaan', 'Check and save')}`));
+    const vb = el('div', 'pbtns');
+    const cmp = el('button', 'btn' + (S.showOriginal ? ' on' : ''), '👁 ' + L('Houd vast: origineel', 'Hold: original'));
+    cmp.onpointerdown = () => { S.showOriginal = true; draw(); }; const up = () => { if (S.showOriginal) { S.showOriginal = false; draw(); } };
+    cmp.onpointerup = up; cmp.onpointerleave = up;
+    const sp = el('button', 'btn' + (S.split ? ' on' : ''), '◧ ' + L('Voor/na', 'Before/after')); sp.onclick = () => { S.split = !S.split; draw(); pSimple(box); };
+    const z = el('button', 'btn', '🔍 ' + (d.zoom === 'fit' ? L('Inzoomen 100%', 'Zoom 100%') : L('Hele foto', 'Whole photo'))); z.onclick = () => { setZoom(d.zoom === 'fit' ? 1 : 'fit'); pSimple(box); };
+    vb.appendChild(cmp); vb.appendChild(sp); vb.appendChild(z); box.appendChild(vb);
+    const sv = el('button', 'btn primary big', '💾 ' + L('Opslaan…', 'Save…')); sv.onclick = exportDialog; const sw2 = el('div', 'stickysave'); sw2.appendChild(sv); box.appendChild(sw2);
+    box.appendChild(el('p', 'pnote', L('Kies bij opslaan bijvoorbeeld "Instagram 4:5" of "Bureaublad". Je origineel blijft altijd bewaard.', 'When saving you can pick e.g. "Instagram 4:5" or "Desktop". Your original is never changed.')));
+    const ex = el('div', 'expertnote', `${L('Meer mogelijkheden nodig? Lagen, maskers, curven, sterren, tekst…', 'Need more? Layers, masks, curves, stars, text…')} `);
+    const eb = el('button', 'linkbtn', L('Naar Expert-modus →', 'Switch to Expert mode →')); eb.onclick = () => setMode('expert'); ex.appendChild(eb);
+    box.appendChild(ex);
   }
 
   // -------------------------------------------------------------- dialogs ---
@@ -1661,6 +1823,17 @@
   // ---------------------------------------------------------- start screen ---
   function renderStart() {
     const s = $('startscreen');
+    if (S.mode === 'simple') {
+      s.innerHTML = `<div class="box simplestart"><div class="steps">
+        <h1>AstroPolish</h1><p class="lead">${L('Mooie astrofoto\'s in drie stappen.', 'Beautiful astrophotos in three steps.')}</p>
+        <ol><li><b>${L('Open je foto', 'Open your photo')}</b><span>${L('Het gestackte FITS- of JPG-bestand van je Dwarf 3. De app maakt hem meteen zo helder en mooi mogelijk.', 'The stacked FITS or JPG file from your Dwarf 3. The app immediately makes it as bright and beautiful as possible.')}</span></li>
+        <li><b>${L('Kies een stijl', 'Choose a style')}</b><span>${L('Niet tevreden? Klik een andere stijl aan of schuif aan helderheid, kleur of ruis.', 'Not happy? Click another style or move the brightness, colour or noise sliders.')}</span></li>
+        <li><b>${L('Opslaan', 'Save')}</b><span>${L('Als JPG voor je telefoon, Instagram of als bureaubladachtergrond.', 'As JPG for your phone, Instagram or as a desktop background.')}</span></li></ol>
+        <div class="pbtns"><button class="btn primary big" id="ssOpen">${L('Foto openen…', 'Open photo…')}</button><button class="btn big" id="ssDemo">${L('Probeer met een voorbeeld', 'Try with a sample')}</button></div>
+        <p class="pnote">${L('Of sleep een foto in dit venster. Alles blijft op je eigen computer.', 'Or drop a photo on this window. Everything stays on your computer.')}</p></div></div>`;
+      $('ssOpen').onclick = () => $('fileInput').click(); $('ssDemo').onclick = openDemo;
+      return;
+    }
     s.innerHTML = `<div class="box"><div class="col"><h1>AstroPolish</h1>
       <button class="btn primary big" id="ssOpen">${L('Openen…', 'Open…')}</button>
       <button class="btn big" id="ssDemo">${L('Voorbeeld openen', 'Open sample')}</button>
@@ -1670,7 +1843,7 @@
       <div class="drop"><div><b>${L("Sleep foto's hierheen", 'Drop photos here')}</b>JPG · PNG · WebP · TIFF (8/16/32-bit) · FITS (RGB/Bayer)<br><br>${L('Meerdere FITS tegelijk slepen = sessies combineren.', 'Dropping several FITS at once = combine sessions.')}<br><br><span class="pnote">${L('Alles blijft op je eigen computer.', 'Everything stays on your computer.')}</span></div></div></div>`;
     $('ssOpen').onclick = () => $('fileInput').click(); $('ssDemo').onclick = openDemo; $('ssStack').onclick = () => stackDialog(); $('ssBatch').onclick = batchDialog; $('ssHelp').onclick = helpDialog;
   }
-  function renderAll() { document.documentElement.lang = I18N.getLang(); renderMenubar(); renderToolbar(); renderOptions(); renderStart(); renderDock(); renderStatus(); draw(); }
+  function renderAll() { document.documentElement.lang = I18N.getLang(); document.body.classList.toggle('simple', S.mode === 'simple'); renderMenubar(); renderToolbar(); renderOptions(); renderStart(); renderDock(); renderStatus(); draw(); }
 
   // ------------------------------------------------------------- keyboard ---
   const typing = () => { const a = document.activeElement; return a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !['range', 'checkbox', 'button', 'color'].includes(a.type)) || a.tagName === 'SELECT'); };
@@ -1692,11 +1865,14 @@
         2: () => { S.channel = 'rgb'; draw(); }, 3: () => { S.channel = 'r'; draw(); }, 4: () => { S.channel = 'g'; draw(); }, 5: () => { S.channel = 'b'; draw(); }, 6: () => { S.channel = 'l'; draw(); },
         '[': () => moveLayer(-1), ']': () => moveLayer(1), ',': () => { const l = curLayer(); if (l) toggleLayer(l.id); }, "'": () => { S.grid = !S.grid; draw(); },
       };
-      const fn = map[lk]; if (fn && (D() || ['o', 'k'].includes(lk))) { e.preventDefault(); fn(); renderStatus(); }
+      const fn = map[lk];
+      if (S.mode === 'simple' && 'lmubijad[],\''.includes(lk)) { e.preventDefault(); return; }
+      if (fn && (D() || ['o', 'k'].includes(lk))) { e.preventDefault(); fn(); renderStatus(); }
       return;
     }
     if (e.altKey && k.toLowerCase() === 'k') { S.clip = !S.clip; draw(); e.preventDefault(); return; }
     if (k === 'F1') { e.preventDefault(); helpDialog(); return; }
+    if (S.mode === 'simple') { if (k === '\\') { S.showOriginal = !S.showOriginal; draw(); } if (k.toLowerCase() === 'y') { S.split = !S.split; draw(); } return; }
     if (k === 'Delete' || k === 'Backspace') { if (curLayer()) { deleteLayer(); e.preventDefault(); } return; }
     if (k === 'Enter' && S.tool === 'crop') { applyCrop(); return; }
     if (k === '\\') { S.showOriginal = !S.showOriginal; draw(); return; }
@@ -1727,5 +1903,5 @@
 
   // ---------------------------------------------------------------- init ---
   renderAll();
-  window.AstroApp = { S, D, openDemo, openImage, addLayer, deleteLayer, selectLayer, setTool, setZoom, applyAction, undo, redo, renderFull, exportDialog, takeSnapshot, isWorker: proc.isWorker, setGeom, curLayer, requestPreview, toggleViewMask, setParam, setMask };
+  window.AstroApp = { S, D, openDemo, openImage, addLayer, deleteLayer, selectLayer, setTool, setZoom, applyAction, undo, redo, renderFull, exportDialog, takeSnapshot, isWorker: proc.isWorker, setGeom, curLayer, requestPreview, toggleViewMask, setParam, setMask, setMode };
 })();
