@@ -1,5 +1,5 @@
 /* AstroPolish - background worker so the interface never freezes */
-importScripts('engine.js', 'formats.js', 'core.js');
+importScripts('engine.js', 'formats.js', 'stack.js', 'core.js');
 const state = {};
 self.onmessage = (e) => {
   try {

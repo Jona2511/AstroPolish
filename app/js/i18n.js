@@ -3,10 +3,16 @@
   'use strict';
   const T = {
     nl: {
-      tagline: "Astrofoto's mooi maken met één klik", newPhoto: 'Nieuwe foto', batch: "Meerdere foto's",
+      tagline: "Astrofoto's mooi maken met één klik",
+      undo: 'Ongedaan maken (Ctrl+Z)', redo: 'Opnieuw (Ctrl+Y)', stack: 'Sessies combineren', stackLink: 'Meerdere nachten combineren',
+      apply: 'Toepassen', cancel: 'Annuleren', vsSnap: 'Momentopname', cropTool: 'Bijsnijden', pickWB: 'Witbalans: klik op een witte ster of grijs gebied',
+      snapshot: 'Momentopname maken om mee te vergelijken', vmNormal: 'Normale weergave', vmStars: 'Sterrenmasker', vmStarless: 'Zonder sterren',
+      vmGradient: 'Gevonden lichtvervuiling', vmClip: 'Over-/onderbelichting',
+      stackTitle: 'Sessies combineren', stackStart: 'Combineren',
+      stackText: 'Heb je hetzelfde object op meerdere avonden gefotografeerd? Kies de gestackte bestanden (bijvoorbeeld de FITS van elke sessie). AstroPolish lijnt ze uit op de sterren (verschuiving en rotatie) en middelt ze tot één foto met minder ruis.', newPhoto: 'Nieuwe foto', batch: "Meerdere foto's",
       dropTitle: 'Sleep je astrofoto hierheen', dropOr: 'of', choose: 'Kies een foto',
       formats: 'JPG, PNG, TIFF en FITS · ook gestackte FITS van de Dwarf 3',
-      demo: 'Of probeer het eerst met een voorbeeldfoto', step1: 'Foto kiezen', step2: 'Stijl aanklikken', step3: 'Opslaan',
+      demo: 'Probeer het eerst met een voorbeeldfoto', step1: 'Foto kiezen', step2: 'Stijl aanklikken', step3: 'Opslaan',
       privacy: "Je foto's blijven op je eigen computer. Er wordt niets geüpload.",
       before: 'Voor', after: 'Na', compare: 'Voor / na', fit: 'Passend', zoom100: '100%', working: 'Bezig…',
       hint: 'Sleep de lijn om voor en na te vergelijken · houd spatie ingedrukt voor het origineel',
@@ -54,24 +60,39 @@
       batchFolder: "Kies een map waarin de foto's worden opgeslagen",
       help: `<h2>Zo werkt AstroPolish</h2>
 <ol class="help-steps"><li><b>Kies een foto.</b> Sleep hem in het venster of klik op <i>Kies een foto</i>.</li>
-<li><b>Klik op een stijl.</b> <i>Automatisch</i> kijkt naar de bestandsnaam (bijv. <code>M 42</code>) en naar de foto zelf, en kiest de beste stijl.</li>
-<li><b>Opslaan.</b> Kies JPG om te delen, of TIFF 16-bit als je later nog verder wilt bewerken.</li></ol>
+<li><b>Klik op een stijl.</b> <i>Automatisch</i> kijkt naar de bestandsnaam (bijv. <code>M 42</code>), de FITS-gegevens en de foto zelf.</li>
+<li><b>Opslaan.</b> Kies het bestandstype en het formaat (bijv. Instagram) onderaan.</li></ol>
+<h3>De tabbladen</h3>
+<ul>
+<li><b>Stijl</b>: kant-en-klare stijlen, snelle schuifjes, je eigen stijlen en een analyse van je foto.</li>
+<li><b>Licht</b>: oprekken (automatisch, arcsinh, GHS, niveaus), helderheid, zwartpunt, felle delen beschermen, curves en niveaus.</li>
+<li><b>Kleur</b>: kleurkalibratie, witbalans met pipet, temperatuur, HOO/Foraxx/Hubble-paletten voor de duoband-filter, verzadiging, kleur per tint (HSL) en kleurbalans.</li>
+<li><b>Detail</b>: ruisonderdrukking (snel of wavelets), achtergrond gladder, lokaal contrast, verscherpen, deconvolutie en RegiStax-achtige wavelets.</li>
+<li><b>Sterren</b>: sterren kleiner, minder fel, minder kleur, halo's en blauwe randen weg, sterren helemaal verwijderen, en star spikes toevoegen.</li>
+<li><b>Effect</b>: gloed, vignet en tekst/watermerk.</li>
+<li><b>Beeld</b>: bijsnijden, rechtzetten, draaien, spiegelen, 2×2 binning, hete pixels en lichtvervuiling (gradient).</li>
+<li><b>Info</b>: histogram, sterren, scherpte (FWHM), ruis en de FITS-gegevens.</li></ul>
 <h3>Tips voor de Dwarf 3</h3>
-<ul><li>Gebruik als het kan het gestackte <b>FITS</b>-bestand (<code>stacked…fits</code>). Daar zit veel meer detail in dan in de JPG.</li>
-<li>Komt een FITS ondersteboven binnen? Gebruik de knop ⇵.</li>
-<li>Zie je nog een kleurverloop? Zet bij <i>Alle instellingen</i> de soort gradient op <i>Complex</i>.</li>
-<li>Bij foto's met de duoband-filter kun je <i>Groene zweem verwijderen</i> beter laag zetten, anders verdwijnt de blauwgroene OIII-kleur.</li></ul>
-<h3>Wat doet de app?</h3>
-<p>Hij verwijdert randen van het stacken, hete pixels en lichtvervuiling, maakt de achtergrond neutraal, kalibreert kleuren op de sterren, rekt het beeld zo helder mogelijk op zonder de achtergrond grijs te maken, haalt ruis weg, verkleint sterren, versterkt structuur en verzadigt de kleuren.</p>
+<ul><li>Gebruik als het kan het gestackte <b>FITS</b>-bestand. Daar zit veel meer detail in dan in de JPG.</li>
+<li>Met de duoband-filter: probeer de stijlen <i>HOO</i>, <i>Foraxx</i> of <i>Hubble</i>.</li>
+<li>Meerdere avonden hetzelfde object? Gebruik <i>Sessies combineren</i>.</li>
+<li>Zie je nog een kleurverloop? Kies bij Beeld → Lichtvervuiling de methode <i>Raster (complex)</i>, en kijk met de weergave <i>Gevonden lichtvervuiling</i> wat er wordt weggehaald.</li>
+<li>Komt een FITS ondersteboven binnen? Gebruik spiegelen (⇵) bij Beeld.</li></ul>
 <h3>Sneltoetsen</h3>
-<p><kbd>Spatie</kbd> ingedrukt houden: origineel · <kbd>Ctrl</kbd>+<kbd>S</kbd>: opslaan · <kbd>Ctrl</kbd>+<kbd>O</kbd>: foto openen</p>
-<p class="muted">AstroPolish is gratis en open source. Je foto's verlaten je computer nooit.</p>`,
+<p><kbd>Spatie</kbd> ingedrukt: origineel · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd>: ongedaan maken/opnieuw · <kbd>Ctrl</kbd>+<kbd>S</kbd>: opslaan · <kbd>Ctrl</kbd>+<kbd>O</kbd>: openen · dubbelklik op een schuifje: terug naar de stijl · dubbelklik op de foto: inzoomen</p>
+<p class="muted">AstroPolish is gratis en open source (MIT). Je foto's verlaten je computer nooit. Sterren verwijderen en ruisonderdrukking werken zonder AI-modellen. Voor het beste resultaat op zware data blijven StarNet en GraXpert sterker.</p>`,
     },
     en: {
-      tagline: 'Beautiful astrophotos in one click', newPhoto: 'New photo', batch: 'Multiple photos',
+      tagline: 'Beautiful astrophotos in one click',
+      undo: 'Undo (Ctrl+Z)', redo: 'Redo (Ctrl+Y)', stack: 'Combine sessions', stackLink: 'Combine multiple nights',
+      apply: 'Apply', cancel: 'Cancel', vsSnap: 'Snapshot', cropTool: 'Crop', pickWB: 'White balance: click a white star or grey area',
+      snapshot: 'Take a snapshot to compare with', vmNormal: 'Normal view', vmStars: 'Star mask', vmStarless: 'Without stars',
+      vmGradient: 'Detected light pollution', vmClip: 'Clipping',
+      stackTitle: 'Combine sessions', stackStart: 'Combine',
+      stackText: 'Imaged the same object on several nights? Choose the stacked files (for example the FITS of each session). AstroPolish aligns them on the stars (shift and rotation) and averages them into one photo with less noise.', newPhoto: 'New photo', batch: 'Multiple photos',
       dropTitle: 'Drop your astrophoto here', dropOr: 'or', choose: 'Choose a photo',
       formats: 'JPG, PNG, TIFF and FITS · including stacked FITS from the Dwarf 3',
-      demo: 'Or try it first with a sample photo', step1: 'Choose photo', step2: 'Click a style', step3: 'Save',
+      demo: 'Try it first with a sample photo', step1: 'Choose photo', step2: 'Click a style', step3: 'Save',
       privacy: 'Your photos stay on your own computer. Nothing is uploaded.',
       before: 'Before', after: 'After', compare: 'Before / after', fit: 'Fit', zoom100: '100%', working: 'Working…',
       hint: 'Drag the line to compare before and after · hold space to see the original',
@@ -115,18 +136,27 @@
       batchFolder: 'Choose a folder to save the photos in',
       help: `<h2>How AstroPolish works</h2>
 <ol class="help-steps"><li><b>Choose a photo.</b> Drop it on the window or click <i>Choose a photo</i>.</li>
-<li><b>Click a style.</b> <i>Automatic</i> looks at the file name (e.g. <code>M 42</code>) and the photo itself and picks the best style.</li>
-<li><b>Save.</b> Choose JPG to share, or 16-bit TIFF if you want to keep editing.</li></ol>
+<li><b>Click a style.</b> <i>Automatic</i> looks at the file name (e.g. <code>M 42</code>), the FITS header and the photo itself.</li>
+<li><b>Save.</b> Choose file type and size (e.g. Instagram) at the bottom.</li></ol>
+<h3>The tabs</h3>
+<ul>
+<li><b>Style</b>: ready-made styles, quick sliders, your own styles and an analysis of your photo.</li>
+<li><b>Light</b>: stretching (automatic, arcsinh, GHS, levels), brightness, black point, highlight protection, curves and levels.</li>
+<li><b>Colour</b>: colour calibration, white balance picker, temperature, HOO/Foraxx/Hubble palettes for dual-band filters, saturation, per-hue colour (HSL) and colour balance.</li>
+<li><b>Detail</b>: noise reduction (fast or wavelets), smoother background, local contrast, sharpening, deconvolution and RegiStax-like wavelets.</li>
+<li><b>Stars</b>: smaller, dimmer or less colourful stars, halo and blue fringe removal, removing stars completely, and adding star spikes.</li>
+<li><b>Effect</b>: glow, vignette and text / watermark.</li>
+<li><b>Image</b>: crop, straighten, rotate, flip, 2×2 binning, hot pixels and light pollution (gradient).</li>
+<li><b>Info</b>: histogram, stars, sharpness (FWHM), noise and FITS header.</li></ul>
 <h3>Tips for the Dwarf 3</h3>
-<ul><li>If possible use the stacked <b>FITS</b> file (<code>stacked…fits</code>). It holds much more detail than the JPG.</li>
-<li>FITS shows upside down? Use the ⇵ button.</li>
-<li>Still a colour gradient? Under <i>All settings</i> set the gradient type to <i>Complex</i>.</li>
-<li>With the dual-band filter keep <i>Remove green cast</i> low, or the teal OIII colour disappears.</li></ul>
-<h3>What does it do?</h3>
-<p>It removes stacking borders, hot pixels and light pollution, neutralises the background, calibrates colour on the stars, stretches the image as bright as possible without a grey background, reduces noise, shrinks stars, enhances structure and boosts colour.</p>
+<ul><li>If possible use the stacked <b>FITS</b> file. It holds much more detail than the JPG.</li>
+<li>With the dual-band filter try the <i>HOO</i>, <i>Foraxx</i> or <i>Hubble</i> styles.</li>
+<li>Same object on several nights? Use <i>Combine sessions</i>.</li>
+<li>Still a colour gradient? Under Image → Light pollution choose <i>Grid (complex)</i> and use the view <i>Detected light pollution</i> to see what is removed.</li>
+<li>FITS shows upside down? Use flip (⇵) under Image.</li></ul>
 <h3>Shortcuts</h3>
-<p>Hold <kbd>Space</kbd>: original · <kbd>Ctrl</kbd>+<kbd>S</kbd>: save · <kbd>Ctrl</kbd>+<kbd>O</kbd>: open photo</p>
-<p class="muted">AstroPolish is free and open source. Your photos never leave your computer.</p>`,
+<p>Hold <kbd>Space</kbd>: original · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd>: undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd>: save · <kbd>Ctrl</kbd>+<kbd>O</kbd>: open · double-click a slider: back to style value · double-click the photo: zoom</p>
+<p class="muted">AstroPolish is free and open source (MIT). Your photos never leave your computer. Star removal and noise reduction work without AI models. On difficult data, StarNet and GraXpert are still stronger.</p>`,
     },
   };
   let lang = 'nl';

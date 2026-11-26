@@ -3,7 +3,7 @@ const F = require('../app/js/formats.js');
 const E = require('../app/js/engine.js');
 const fs = require('fs');
 const dir = process.argv[2];
-const files = fs.readdirSync(dir).filter((f) => /\.(fits|tif)$/.test(f));
+const files = fs.readdirSync(dir).filter((f) => /\.(fits|tif)$/.test(f) && !f.startsWith('sessie'));
 (async () => {
   let fail = 0;
   for (const f of files) {

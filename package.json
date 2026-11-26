@@ -1,8 +1,8 @@
 {
   "name": "astropolish",
   "productName": "AstroPolish",
-  "version": "1.0.0",
-  "description": "Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi.",
+  "version": "2.0.0",
+  "description": "Maak astrofoto's van de Dwarf 3 (en andere smart-telescopen) met één klik mooi, met alle tools van de grote programma's.",
   "main": "electron/main.js",
   "author": "Jonathan van Zijverden",
   "license": "MIT",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win --publish never",
-    "test": "node test/engine-test.js /tmp/astropolish-test"
+    "test": "node test/engine-test.js /tmp/astropolish-test && node test/stack-test.js"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -19,13 +19,31 @@
   "build": {
     "appId": "io.github.jona2511.astropolish",
     "productName": "AstroPolish",
-    "files": ["electron/**", "app/**", "build/icon.png", "package.json"],
-    "directories": { "output": "dist", "buildResources": "build" },
+    "files": [
+      "electron/**",
+      "app/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
     "win": {
       "icon": "build/icon.png",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -36,6 +54,8 @@
       "shortcutName": "AstroPolish",
       "artifactName": "AstroPolish-${version}-setup.${ext}"
     },
-    "portable": { "artifactName": "AstroPolish-${version}-portable.${ext}" }
+    "portable": {
+      "artifactName": "AstroPolish-${version}-portable.${ext}"
+    }
   }
 }

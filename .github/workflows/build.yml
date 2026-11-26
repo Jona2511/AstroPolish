@@ -22,6 +22,8 @@ jobs:
         env:
           W: '960'
           H: '540'
+      - name: Stacking test
+        run: node test/stack-test.js
 
   windows:
     needs: test
