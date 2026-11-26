@@ -310,9 +310,12 @@
     hdrmt: {
       g: 'stretch', nl: 'HDR multischaal', en: 'HDR multiscale',
       p: [R('amount', 0.5, 0, 1, 0.01, 'Sterkte', 'Strength'), R('layers', 5, 3, 7, 1, 'Schaal (lagen)', 'Scale (layers)')],
-      run: (img, p) => {
+      run: (img, p, env) => {
         const L = lum(img); const lay = I.atrous(L, img.w, img.h, Math.round(p.layers));
-        const res = lay[lay.length - 1]; const { med } = medMad(res);
+        const res = lay[lay.length - 1];
+        // measured once (preview) and reused, so a zoomed-in region and the export use the same reference
+        if (env.ctx.med === undefined) env.ctx.med = medMad(res).med;
+        const med = env.ctx.med;
         const Ln = new Float32Array(L.length);
         for (let i = 0; i < L.length; i++) Ln[i] = L[i] - (res[i] - med) * p.amount * 0.8 * smooth(med, 1, res[i]);
         I.applyLumRatio(img, L, Ln, 0.2, 2); return img;
@@ -323,7 +326,7 @@
     palette: {
       g: 'nb', nl: 'Narrowband-palet (duoband)', en: 'Narrowband palette (dual-band)',
       p: [S('palette', 'hoo', PALETTES, 'Palet', 'Palette'), R('oiiiBoost', 0.3, 0, 1, 0.01, 'OIII versterken', 'Boost OIII')],
-      run: (img, p, env) => { I.applyPalette(img, p.palette, p.oiiiBoost, bgOf(img, env)); return img; },
+      run: (img, p, env) => { I.applyPalette(img, p.palette, p.oiiiBoost, bgOf(img, env), env.sc, env.ctx); return img; },
     },
     chmix: {
       g: 'adjust', nl: 'Kanaalmixer', en: 'Channel mixer',

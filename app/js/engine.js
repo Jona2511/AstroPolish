@@ -22,7 +22,7 @@
   'use strict';
 
   // ------------------------------------------------------------ helpers ---
-  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const clamp01 = (v) => (v > 0 ? (v < 1 ? v : 1) : 0); // NaN -> 0
   const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
   const CH = ['r', 'g', 'b'];
 
@@ -856,16 +856,28 @@
   }
 
   // narrowband palettes for dual-band (Ha + OIII) data, on stretched values
-  function applyPalette(img, pal, oiiiBoost, bg) {
+  // sc/ctx are optional: with ctx the neutralisation offsets are measured once (on the preview)
+  // and reused for the full-resolution export, so preview and export match.
+  function applyPalette(img, pal, oiiiBoost, bg, sc, ctx) {
     if (!pal || pal === 'rgb') return;
     const n = img.w * img.h;
     const k = 1 + 3 * (oiiiBoost || 0);
     bg = Math.min(0.6, bg || 0);
+    // The OIII boost is a concave curve. Applied per pixel it would also amplify the positive half
+    // of the background noise (but not the negative half), brightening the sky - more so at full
+    // resolution than in the smoother preview. So the gain is computed from a slightly smoothed
+    // OIII signal and added to the noisy pixel values.
+    let Os = null;
+    if (k !== 1) {
+      const O0 = new Float32Array(n);
+      for (let i = 0; i < n; i++) O0[i] = (img.g[i] + img.b[i]) / 2;
+      Os = gauss(O0, img.w, img.h, Math.max(0.6, 1.5 * (sc || img.scale || 1)));
+    }
+    const boost = (o) => (o > bg ? bg + (1 - bg) * (1 - Math.pow(1 - clamp01((o - bg) / (1 - bg)), k)) : o);
     for (let i = 0; i < n; i++) {
       const Ha = img.r[i];
       let O = (img.g[i] + img.b[i]) / 2;
-      // boost only the OIII signal above the background
-      if (k !== 1 && O > bg) O = bg + (1 - bg) * (1 - Math.pow(1 - clamp01((O - bg) / (1 - bg)), k));
+      if (Os) O += boost(Os[i]) - Os[i];
       let r, g, b;
       switch (pal) {
         case 'hoo': r = Ha; g = O; b = O; break;
@@ -880,7 +892,8 @@
     }
     // keep the background neutral grey after remixing the channels
     if (pal !== 'ha' && pal !== 'oiii') {
-      const m = {}; for (const c of CH) m[c] = medMad(img[c]).med;
+      let m = ctx && ctx.palMed;
+      if (!m) { m = {}; for (const c of CH) m[c] = medMad(img[c]).med; if (ctx) ctx.palMed = m; }
       const avg = (m.r + m.g + m.b) / 3;
       for (const c of CH) { const d = m[c] - avg, a = img[c]; for (let i = 0; i < n; i++) a[i] -= d * (1 - clamp01((a[i] - m[c]) * 3)); }
     }
@@ -1066,7 +1079,14 @@
     const openS = gauss(open, w, h, Math.max(0.6, r * 0.6));
     const Ln = new Float32Array(L.length);
     const a = Math.min(0.95, amount);
-    for (let i = 0; i < L.length; i++) Ln[i] = L[i] - Math.max(0, L[i] - Math.max(open[i], openS[i])) * a;
+    // An opening also removes the positive half of the background noise, which used to darken
+    // (and clip) the sky - more at full resolution than in the smoother preview.
+    // The reduction is therefore limited to detected stars (the same star mask as star separation).
+    const mask = starMaskOf(img, sc, 0.3);
+    for (let i = 0; i < L.length; i++) {
+      const ex = Math.max(0, L[i] - Math.max(open[i], openS[i]));
+      Ln[i] = L[i] - ex * a * mask[i];
+    }
     applyLumRatio(img, L, Ln, 0.05, 1);
   }
 
@@ -1309,8 +1329,15 @@
     if (p.invert) for (const c of CH) { const a = img[c]; for (let i = 0; i < n; i++) a[i] = 1 - clamp01(a[i]); }
   }
 
+  // clamp to 0..1; NaN (which fails every comparison) becomes 0 so it can never reach the display or an export
   function clampAll(img) {
-    for (const c of CH) { const a = img[c]; for (let i = 0; i < a.length; i++) a[i] = a[i] < 0 ? 0 : a[i] > 1 ? 1 : a[i]; }
+    for (const c of CH) { const a = img[c]; for (let i = 0; i < a.length; i++) { const v = a[i]; a[i] = v > 0 ? (v < 1 ? v : 1) : 0; } }
+  }
+  // replace non-finite values (NaN, ±Inf) by 0 and clamp to 0..1; returns the number of replaced values
+  function sanitize(img) {
+    let bad = 0;
+    for (const c of CH) { const a = img[c]; for (let i = 0; i < a.length; i++) { const v = a[i]; if (v !== v || v === Infinity || v === -Infinity) { a[i] = 0; bad++; } else a[i] = v > 0 ? (v < 1 ? v : 1) : 0; } }
+    return bad;
   }
 
   // ---------------------------------------------------------- process ---
@@ -1589,7 +1616,8 @@
   function toRGB16(img) {
     const n = img.w * img.h, out = new Uint16Array(n * 3);
     for (let i = 0; i < n; i++) {
-      out[i * 3] = Math.round(img.r[i] * 65535); out[i * 3 + 1] = Math.round(img.g[i] * 65535); out[i * 3 + 2] = Math.round(img.b[i] * 65535);
+      // clamp first: a Uint16Array wraps values above 65535 around (bright pixels would turn black)
+      out[i * 3] = Math.round(clamp01(img.r[i]) * 65535); out[i * 3 + 1] = Math.round(clamp01(img.g[i]) * 65535); out[i * 3 + 2] = Math.round(clamp01(img.b[i]) * 65535);
     }
     return out;
   }
@@ -1676,6 +1704,7 @@
   const api = {
     _: internals,
     DEFAULTS, PRESETS, HUES, process, presetParams, autoPreset, guessFromText, analyze, detectStars,
+    sanitize, clampAll,
     detectAutoCrop, cropImage, rotate90, rotateArbitrary, bin2, flipH, flipV: flipVert, downscale, resize, pad, cloneImage, newImage,
     toRGBA, fromRGBA, toRGB16, histogram, makeDemo, medMad, percentile, lum, gauss, curveLUT, sampleBilinear,
   };
