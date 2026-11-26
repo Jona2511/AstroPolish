@@ -83,13 +83,13 @@
         s += src[o + Math.min(w - 1, x + r + 1)] - src[o + Math.max(0, x - r)];
       }
     }
-    for (let x = 0; x < w; x++) {
-      let s = 0;
-      for (let k = -r; k <= r; k++) s += tmp[Math.min(h - 1, Math.max(0, k)) * w + x];
-      for (let y = 0; y < h; y++) {
-        out[y * w + x] = s * inv;
-        s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
-      }
+    // vertical pass, row by row (cache friendly). acc[x] follows exactly the same sequence of
+    // double-precision additions as a per-column running sum, so results are bit-identical.
+    const acc = new Float64Array(w);
+    for (let k = -r; k <= r; k++) { const o = Math.min(h - 1, Math.max(0, k)) * w; for (let x = 0; x < w; x++) acc[x] += tmp[o + x]; }
+    for (let y = 0; y < h; y++) {
+      const o = y * w, oa = Math.min(h - 1, y + r + 1) * w, os = Math.max(0, y - r) * w;
+      for (let x = 0; x < w; x++) { out[o + x] = acc[x] * inv; acc[x] += tmp[oa + x] - tmp[os + x]; }
     }
     return out;
   }
@@ -107,24 +107,38 @@
     return a;
   }
 
+  // Separable min/max filter over a (2r+1)^2 window, clamped at the borders.
+  // van Herk / Gil-Werman: O(n) per pass independent of r, exact (same values as the naive filter).
   function minMaxFilter(src, w, h, r, isMax) {
+    r = Math.max(0, r | 0);
+    if (r === 0) return new Float32Array(src);
+    const K = 2 * r + 1, pad = isMax ? -Infinity : Infinity;
+    const pick = isMax ? (a, b) => (a > b ? a : b) : (a, b) => (a < b ? a : b);
     const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    // horizontal pass, one row at a time
+    const P = w + 2 * r, A = new Float64Array(P), G = new Float64Array(P), Hh = new Float64Array(P);
     for (let y = 0; y < h; y++) {
       const o = y * w;
-      for (let x = 0; x < w; x++) {
-        let v = src[o + x];
-        const a = Math.max(0, x - r), b = Math.min(w - 1, x + r);
-        for (let xx = a; xx <= b; xx++) { const s = src[o + xx]; if (isMax ? s > v : s < v) v = s; }
-        tmp[o + x] = v;
-      }
+      for (let p = 0; p < P; p++) { const x = p - r; A[p] = x >= 0 && x < w ? src[o + x] : pad; }
+      for (let p = 0; p < P; p++) G[p] = p % K === 0 ? A[p] : pick(G[p - 1], A[p]);
+      for (let p = P - 1; p >= 0; p--) Hh[p] = (p % K === K - 1 || p === P - 1) ? A[p] : pick(Hh[p + 1], A[p]);
+      for (let x = 0; x < w; x++) { const p = x + r; tmp[o + x] = pick(Hh[p - r], G[p + r]); }
+    }
+    // vertical pass on whole rows (cache friendly)
+    const PV = h + 2 * r;
+    const GV = new Float32Array(PV * w), HV = new Float32Array(PV * w);
+    const row = (p) => { const y = p - r; return y >= 0 && y < h ? y * w : -1; };
+    for (let p = 0; p < PV; p++) {
+      const ro = row(p), go = p * w, start = p % K === 0;
+      for (let x = 0; x < w; x++) { const a = ro < 0 ? pad : tmp[ro + x]; GV[go + x] = start ? a : pick(GV[go - w + x], a); }
+    }
+    for (let p = PV - 1; p >= 0; p--) {
+      const ro = row(p), ho = p * w, end = p % K === K - 1 || p === PV - 1;
+      for (let x = 0; x < w; x++) { const a = ro < 0 ? pad : tmp[ro + x]; HV[ho + x] = end ? a : pick(HV[ho + w + x], a); }
     }
     for (let y = 0; y < h; y++) {
-      const a = Math.max(0, y - r), b = Math.min(h - 1, y + r);
-      for (let x = 0; x < w; x++) {
-        let v = tmp[y * w + x];
-        for (let yy = a; yy <= b; yy++) { const s = tmp[yy * w + x]; if (isMax ? s > v : s < v) v = s; }
-        out[y * w + x] = v;
-      }
+      const p = y + r, oh = (p - r) * w, og = (p + r) * w, o = y * w;
+      for (let x = 0; x < w; x++) out[o + x] = pick(HV[oh + x], GV[og + x]);
     }
     return out;
   }
