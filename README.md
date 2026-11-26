@@ -3,6 +3,10 @@
 **Astrofoto-editor voor de Dwarf 3 (en andere smart-telescopen), opgezet zoals Adobe Photoshop: menubalk, gereedschappen, optiebalk, documenttabs en panelen, met niet-destructieve aanpassingslagen.**
 Foto erin slepen en je krijgt meteen een complete automatische bewerking, opgebouwd uit lagen die je allemaal nog kunt aanpassen, verbergen, maskeren en mengen.
 
+**Twee modi** (rechtsboven te wisselen):
+- **Eenvoudig** (standaard voor nieuwe gebruikers): drie stappen. Foto openen, stijl kiezen, eventueel een paar schuifjes in gewone taal (helderheid, contrast, kleur, koel/warm, lichtvervuiling, ruis, sterren kleiner, scherpte) en opslaan. Geen lagen of gereedschappen in beeld.
+- **Expert**: de volledige Photoshop-werkruimte hieronder. Elke laag heeft een korte uitleg wat hij doet.
+
 ![AstroPolish](docs/screenshot.png)
 
 ## Downloaden
