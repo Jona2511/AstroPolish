@@ -122,6 +122,29 @@ for (const k of SCENES) {
   const raw = run(scene('m42', { w: 360, h: 240 }).img, [Object.assign(O.newLayer('stretch', { shoulder: 0 }), {})]);
   check('Shoulder 0 gives the plain MTF stretch (old behaviour available)', raw.w === 360);
 }
+// ------------- 6. data with a pedestal and a tiny signal range (as in Dwarf 3 / Seestar FITS) ---
+// Found on real Dwarf 3 stacks: every pixel sits on ~0.078 and the sky noise is ~0.00008. The black
+// point was capped at median*0.98 (~20 sigma below the sky) and the stretch LUT put the whole
+// sky-to-nebula range in 2-3 entries, so faint nebulae stayed flat and grey.
+{
+  for (const kind of ['m42', 'galaxy']) {
+    const sc = scene(kind, { w: 600, h: 400 });
+    const { layers } = O.presetLayers('auto', { type: sc.type });
+    const ref = metrics(run(sc.img, layers), sc);
+    const L = I.lum(sc.img), sig = 1.4826 * I.medMad(L).mad, k = 8e-5 / sig, P = 0.078;
+    const ped = Object.assign({}, sc.img, { r: sc.img.r.map((v) => P + v * k), g: sc.img.g.map((v) => P + v * k), b: sc.img.b.map((v) => P + v * k) });
+    const m = metrics(run(ped, O.presetLayers('auto', { type: sc.type }).layers), sc);
+    check(`Pedestal data (${kind}): faint detail as visible as without pedestal (CNR >= 80%)`, m.faintCNR >= 0.8 * ref.faintCNR, `${f(m.faintCNR)} vs ${f(ref.faintCNR)}`);
+    check(`Pedestal data (${kind}): faint detail brightness >= 80% of reference`, m.faintDelta >= 0.8 * ref.faintDelta, `${f(m.faintDelta)} vs ${f(ref.faintDelta)}`);
+    check(`Pedestal data (${kind}): sky level in a normal range (0.08-0.25)`, m.bg > 0.08 && m.bg < 0.25, f(m.bg));
+  }
+  // the stretch LUT must follow a steep curve closely just above the black point
+  const fn = (v) => I.mtf(0.0008, v), st = { c0: 0, c1: 1, lut: I.buildLUT(fn) };
+  const xs = [0.0002, 0.0005, 0.001, 0.003, 0.01, 0.1, 0.6], img = { w: xs.length, h: 1, r: Float32Array.from(xs), g: Float32Array.from(xs), b: Float32Array.from(xs) };
+  I.applyStretch(img, st, { colorPreserve: 0 });
+  const err = Math.max(...xs.map((x, i) => Math.abs(img.r[i] - fn(x))));
+  check('Stretch LUT error on a steep curve < 0.005 (also in the bottom 0.1% of the range)', err < 0.005, f(err));
+}
 // ------------------------------------------- 5. preview vs export for the new defaults ---
 {
   const sc = scene('m42', { w: 1440, h: 960 });

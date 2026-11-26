@@ -55,10 +55,27 @@
     const B = 65536, hist = new Uint32Array(B);
     let n = 0;
     for (let i = 0; i < arr.length; i += step) { hist[Math.min(B - 1, Math.max(0, (arr[i] * (B - 1)) | 0))]++; n++; }
-    const med = histPct(hist, n, 0.5);
+    const med0 = histPct(hist, n, 0.5);
     const dh = new Uint32Array(B);
-    for (let i = 0; i < arr.length; i += step) { const d = Math.abs(arr[i] - med); dh[Math.min(B - 1, (d * (B - 1)) | 0)]++; }
-    return { med, mad: histPct(dh, n, 0.5) };
+    for (let i = 0; i < arr.length; i += step) { const d = Math.abs(arr[i] - med0); dh[Math.min(B - 1, (d * (B - 1)) | 0)]++; }
+    const mad0 = histPct(dh, n, 0.5);
+    // second, much finer pass around the coarse values: data with a pedestal and very low noise
+    // (Dwarf 3: sky 0.078, MAD 0.00004 = 2-3 coarse bins) needs sub-bin precision for the black point
+    const span = Math.max(48 / (B - 1), 12 * mad0);
+    const med = fineQuantile(arr, step, (v) => v, med0 - span, med0 + span, n * 0.5);
+    const mad = fineQuantile(arr, step, (v) => Math.abs(v - med), 0, span, n * 0.5);
+    return { med: med === null ? med0 : med, mad: mad === null ? mad0 : mad };
+  }
+  // value below which `target` samples of f(arr[i]) lie, from a fine histogram over [lo, hi];
+  // null when the answer falls outside the window
+  function fineQuantile(arr, step, f, lo, hi, target) {
+    const B = 16384, hist = new Uint32Array(B), k = B / (hi - lo);
+    let below = 0;
+    for (let i = 0; i < arr.length; i += step) { const v = f(arr[i]); if (v < lo) below++; else if (v < hi) hist[Math.min(B - 1, ((v - lo) * k) | 0)]++; }
+    let c = below;
+    if (c >= target) return null;
+    for (let i = 0; i < B; i++) { const h = hist[i]; if (c + h >= target) return lo + (i + (h ? (target - c) / h : 0.5)) / k; c += h; }
+    return null;
   }
   function percentile(arr, p, step) {
     step = step || Math.max(1, Math.floor(arr.length / 400000));
@@ -804,10 +821,13 @@
     return (x) => (f(x) - a) / (z - a);
   }
 
+  // Stretch LUT on a square-root grid: entry i holds fn((i/n)^2). Astro data lives in the bottom
+  // fraction of a percent of the range, where stretch curves are steepest; a uniform grid put the
+  // whole sky-to-faint-nebula range in two or three entries (seen on Dwarf 3 FITS with a pedestal).
   function buildLUT(fn, n) {
-    n = n || 4096;
+    n = n || 8192;
     const lut = new Float32Array(n + 1);
-    for (let i = 0; i <= n; i++) lut[i] = clamp01(fn(i / n));
+    for (let i = 0; i <= n; i++) { const u = i / n; lut[i] = clamp01(fn(u * u)); }
     return lut;
   }
 
@@ -842,8 +862,14 @@
     }
     const { med, mad } = medMad(L);
     const sigmas = -3.6 + 2.4 * p.blackPoint;
-    const c0 = Math.max(0, Math.min(med * 0.98, med + sigmas * 1.4826 * mad));
-    const c1 = Math.max(c0 + 0.01, Math.min(1, percentile(L, 0.99995) * 1.02));
+    // black point a few noise-sigmas below the sky; always (just) below the median. The old cap of
+    // med*0.98 put it ~20 sigma too low on data with a pedestal (Dwarf 3: sky 0.078, sigma 0.00008),
+    // which left faint nebulae flat and grey.
+    const sig = 1.4826 * mad, gap = sig > 0 ? 0.5 * sig : Math.max(1e-6, med * 0.02);
+    const c0 = Math.max(0, Math.min(med - gap, med + sigmas * sig));
+    // 2% headroom above the brightest pixels, measured from the black point (not from zero: on data
+    // with a pedestal, 2% of the pedestal is a large part of the real signal range)
+    const c1 = Math.max(c0 + 1e-4, Math.min(1, c0 + (percentile(L, 0.99995) - c0) * 1.02));
     const x = Math.max(1e-6, (med - c0) / (c1 - c0));
     const B = p.brightness;
     let fn;
@@ -874,7 +900,7 @@
     const n = img.w * img.h;
     const { c0, c1, lut } = st;
     const N = lut.length - 1;
-    const g = (v) => { const f = v * N; const i = f | 0; return i >= N ? lut[N] : lut[i] + (lut[i + 1] - lut[i]) * (f - i); };
+    const g = (v) => { const f = Math.sqrt(v) * N; const i = f | 0; return i >= N ? lut[N] : lut[i] + (lut[i + 1] - lut[i]) * (f - i); };
     const sc = 1 / (c1 - c0);
     const cp = p.colorPreserve;
     const R = img.r, G = img.g, Bc = img.b;
@@ -1583,7 +1609,7 @@
     [/milky|melkweg|wide|breed/i, 'milkyway'],
     [/androm|triangul|whirlpool|draaikolk|pinwheel|sombrero|bode|cigar|sigaar|leo.?trip|galax|sterrenstelsel|ngc.?891|ngc.?4565|ngc.?253/i, 'galaxy'],
     [/pleiad|zevengesternte|hercules|cluster|sterrenhoop|beehive|praesepe|double.?cluster|ngc.?869|ngc.?884|omega.?cen/i, 'cluster'],
-    [/orion|lagoon|lagune|eagle|adelaar|horsehead|paardenkop|rosette|heart|soul|hart|ziel|north.?america|noord.?amerika|pelican|pelikaan|veil|sluier|california|crab|krab|ring|dumbbell|halter|nebula|nevel|ic.?\d|sh2|sadr|cocoon|iris|bubble|bel|crescent|trifid|swan|zwaan|elephant|olifant|ngc.?7000|ngc.?2244|ngc.?6960|ngc.?6992/i, 'nebula'],
+    [/orion|lagoon|lagune|eagle|adelaar|horsehead|paardenkop|rosette|heart|soul|hart|ziel|north.?america|noord.?amerika|pelican|pelikaan|veil|sluier|california|crab|krab|ring|dumbbell|halter|nebula|nevel|\bic.?\d+|sh2|sadr|cocoon|iris|bubble|bel|crescent|trifid|swan|zwaan|elephant|olifant|ngc.?7000|ngc.?2244|ngc.?6960|ngc.?6992/i, 'nebula'],
   ];
 
   function guessFromText(text) {

@@ -23,6 +23,16 @@ A stacked astrophoto is *linear*: the sky and the faint nebula sit in the bottom
 - **Protect highlights** (*shoulder*) — new in this version, see below.
 - **Colour preservation** — 0 stretches R, G and B separately (colours wash out towards white), 1 stretches luminance only and keeps the colour ratios.
 
+## Data with a pedestal (Dwarf 3 and others)
+
+Many stacking programs and smart telescopes write FITS files where every pixel sits on an offset ("pedestal"). Dwarf 3 stacks, for example, have the sky at about 0.078 of the range with a noise of only about 0.00005, so the whole picture lives in a band of about 0.002. Three details matter for such data, and all three are handled:
+
+- **Black point.** It is placed a few noise-sigmas below the sky, and never more than needed. (Earlier versions capped it at 98% of the median, which on this data was about 20 sigma too low: the nebula stayed flat and grey.)
+- **Noise measurement.** Median and noise are measured in two passes; the second uses a much finer histogram around the sky level, so even noise that spans only a few 16-bit steps is measured accurately.
+- **Curve table.** The stretch curve is stored on a square-root grid, so there are many entries in the bottom fraction of a percent of the range, where the curve is steepest.
+
+A test (`test/presets-test.js`, section 6) puts a synthetic scene on a pedestal with Dwarf-like noise and checks that the result matches the same scene without pedestal.
+
 ## Protect highlights (the "shoulder")
 
 The plain MTF curve is very steep at the bottom and very flat at the top. That is what makes faint nebula visible, but it also squeezes everything brighter than about 40% of the stretched range into a few percent at the top: the core of M42 or a galaxy becomes a white blob.
@@ -53,6 +63,8 @@ The preview is computed on a downscaled copy. The stretch is measured with stati
 ---
 
 ## Nederlands
+
+**Data met een sokkel (Dwarf 3 e.a.).** Bij Dwarf 3-stacks ligt de lucht rond 0,078 met maar ~0,00005 ruis. Daarvoor wordt het zwartpunt nu altijd een paar ruis-sigma onder de lucht gezet (vroeger maximaal 98% van de mediaan, ~20 sigma te laag), wordt de ruis in een tweede, veel fijnere ronde gemeten en staat de stretchcurve in een tabel met veel stappen onderin het bereik. Een test vergelijkt een synthetische scène met en zonder sokkel.
 
 Een gestackte astrofoto is *lineair*: de lucht en de zwakke nevel zitten in de onderste een of twee procent van het helderheidsbereik, dus de foto lijkt bijna zwart. Oprekken (stretchen) brengt die waarden naar een zichtbaar bereik. Het is de belangrijkste stap: hij bepaalt hoeveel zwak detail je ziet, hoe donker de lucht is en of heldere kernen hun structuur houden.
 
