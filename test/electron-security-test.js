@@ -29,4 +29,14 @@ check('index.html has no inline scripts', !/<script(?![^>]*\bsrc=)[^>]*>/.test(h
 const pkg = require('../package.json');
 const major = +String(pkg.devDependencies.electron).replace(/[^0-9.]/g, '').split('.')[0];
 check('Electron is a supported major version (>= 43, Nov 2026)', major >= 43, pkg.devDependencies.electron);
+
+// Native close dialog follows the app language (was always Dutch)
+const { dialogLang, closeDialogText } = require('../electron/dialogs.js');
+check('close dialog: Dutch for nl and nl-NL', dialogLang('nl') === 'nl' && dialogLang('nl-NL') === 'nl');
+check('close dialog: English for en, en-US, other languages and empty', ['en', 'en-US', 'de', '', undefined].every((l) => dialogLang(l) === 'en'));
+check('close dialog: English buttons in English', closeDialogText('en').buttons.join('|') === 'Close anyway|Cancel');
+check('close dialog: Dutch buttons in Dutch', closeDialogText('nl').buttons.join('|') === 'Toch sluiten|Annuleren');
+check('close dialog: both languages have the same fields', ['buttons', 'message', 'detail'].every((k) => closeDialogText('nl')[k] && closeDialogText('en')[k]));
+check('close dialog: main.js uses the translated texts (no hard-coded Dutch buttons)', /closeDialogText\(/.test(main) && !/'Toch sluiten'/.test(main));
+
 summary('ELECTRON');
