@@ -8,6 +8,7 @@ const { app, BrowserWindow, protocol, net, shell, Menu, dialog, session } = requ
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { isSafeExternalUrl, resolveAppFile, ALLOWED_PERMISSIONS } = require('./security.js');
+const { closeDialogText } = require('./dialogs.js');
 
 const APP_DIR = path.join(__dirname, '..', 'app');
 const ORIGIN = 'app://astropolish';
@@ -36,16 +37,45 @@ function createWindow() {
     if (!url.startsWith(ORIGIN + '/')) { e.preventDefault(); openExternalSafely(url); }
   });
   // The page asks before closing when there are unsaved edits (beforeunload). Electron cancels
-  // the close silently in that case, so ask the user here.
+  // the close silently in that case, so ask the user here, in the language the app is shown in
+  // (app.js keeps <html lang> up to date). Reading that language is asynchronous, so the close is
+  // cancelled first and the window is destroyed afterwards if the user chooses to close anyway.
+  let closing = false; // set when the window (not a reload) is being closed
+  let asking = false;  // a close dialog is already open
+  let uiLang = app.getLocale();
+  win.on('close', () => { closing = true; });
   win.webContents.on('will-prevent-unload', (e) => {
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'question', buttons: ['Toch sluiten', 'Annuleren'], defaultId: 1, cancelId: 1,
-      title: 'AstroPolish', message: 'Er zijn bewerkingen die nog niet zijn geëxporteerd of als project opgeslagen.',
-      detail: 'Wil je AstroPolish toch sluiten? Niet-opgeslagen bewerkingen gaan dan verloren.',
-    });
-    if (choice === 0) e.preventDefault(); // preventDefault here means: ignore beforeunload and close
+    if (!closing) {
+      // Not a window close (for example a reload): ask synchronously with the last known language.
+      const t = closeDialogText(uiLang);
+      const choice = dialog.showMessageBoxSync(win, { type: 'question', buttons: t.buttons, defaultId: 1, cancelId: 1, title: 'AstroPolish', message: t.message, detail: t.detail });
+      if (choice === 0) e.preventDefault(); // preventDefault here means: ignore beforeunload and continue
+      return;
+    }
+    closing = false;
+    if (asking) return;
+    asking = true;
+    win.webContents.executeJavaScript('document.documentElement.lang', true)
+      .catch(() => uiLang)
+      .then((lang) => {
+        if (lang) uiLang = lang;
+        const t = closeDialogText(uiLang);
+        return dialog.showMessageBox(win, { type: 'question', buttons: t.buttons, defaultId: 1, cancelId: 1, title: 'AstroPolish', message: t.message, detail: t.detail });
+      })
+      .then(({ response }) => {
+        asking = false;
+        if (response !== 0) { quitting = false; return; } // Cancel also cancels a pending quit
+        if (win.isDestroyed()) return;
+        win.destroy(); // closes without running beforeunload again
+        if (quitting) app.quit(); // continue a quit (Cmd+Q) that this dialog interrupted
+      })
+      .catch(() => { asking = false; });
   });
 }
+
+// Set when the user quits the app (for example Cmd+Q on macOS), so a confirmed close dialog can finish the quit.
+let quitting = false;
+app.on('before-quit', () => { quitting = true; });
 
 app.whenReady().then(() => {
   protocol.handle('app', (req) => {
